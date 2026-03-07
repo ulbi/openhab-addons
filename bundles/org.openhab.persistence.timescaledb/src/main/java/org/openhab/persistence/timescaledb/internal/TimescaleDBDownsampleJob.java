@@ -42,16 +42,16 @@ import org.slf4j.LoggerFactory;
  * ({@link DownsampleConfig#INTERVAL_MAP} and {@link AggregationFunction} enum)
  * before use. The {@code item_id} is always a JDBC bind parameter.
  *
- * @author openHAB Contributors - Initial contribution
+ * @author René Ulbricht - Initial contribution
  */
 @NonNullByDefault
 public class TimescaleDBDownsampleJob implements Runnable {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(TimescaleDBDownsampleJob.class);
+    private final Logger logger = LoggerFactory.getLogger(TimescaleDBDownsampleJob.class);
 
     /**
      * INSERT aggregated rows for one item.
-     * Placeholders: (1) item_id, (2) item_id (GROUP BY).
+     * Placeholder: (1) item_id.
      * Interval and agg-fn are pre-validated strings from the allowlist/enum.
      */
     private static final String SQL_INSERT_AGGREGATED_TEMPLATE = """
@@ -67,7 +67,6 @@ public class TimescaleDBDownsampleJob implements Runnable {
               AND downsampled = FALSE
               AND time < NOW() - INTERVAL '%d days'
             GROUP BY time_bucket('%s', time), item_id
-            ON CONFLICT DO NOTHING
             """;
 
     /**
@@ -91,9 +90,15 @@ public class TimescaleDBDownsampleJob implements Runnable {
               AND time < NOW() - INTERVAL '%d days'
             """;
 
+    /** Resolves an item name to its cached database ID. */
+    @FunctionalInterface
+    interface ItemIdLookup {
+        Optional<Integer> apply(String itemName);
+    }
+
     private final DataSource dataSource;
     private final TimescaleDBMetadataService metadataService;
-    private final java.util.function.Function<String, Optional<Integer>> itemIdLookup;
+    private final ItemIdLookup itemIdLookup;
 
     /**
      * @param dataSource The connection pool.
@@ -101,7 +106,7 @@ public class TimescaleDBDownsampleJob implements Runnable {
      * @param itemIdLookup Resolves an item name to its cached item_id (empty if not yet known to the DB).
      */
     public TimescaleDBDownsampleJob(DataSource dataSource, TimescaleDBMetadataService metadataService,
-            java.util.function.Function<String, Optional<Integer>> itemIdLookup) {
+            ItemIdLookup itemIdLookup) {
         this.dataSource = dataSource;
         this.metadataService = metadataService;
         this.itemIdLookup = itemIdLookup;
@@ -110,7 +115,7 @@ public class TimescaleDBDownsampleJob implements Runnable {
     @Override
     public void run() {
         List<String> itemNames = metadataService.getItemNamesWithDownsampling();
-        LOGGER.info("Downsampling job started: {} item(s) to process", itemNames.size());
+        logger.info("Downsampling job started: {} item(s) to process", itemNames.size());
 
         int success = 0;
         int skipped = 0;
@@ -119,13 +124,13 @@ public class TimescaleDBDownsampleJob implements Runnable {
         for (String itemName : itemNames) {
             Optional<DownsampleConfig> configOpt = metadataService.getDownsampleConfig(itemName);
             if (configOpt.isEmpty()) {
-                LOGGER.debug("Item '{}': no valid DownsampleConfig — skipping", itemName);
+                logger.debug("Item '{}': no valid DownsampleConfig — skipping", itemName);
                 skipped++;
                 continue;
             }
             Optional<Integer> itemIdOpt = itemIdLookup.apply(itemName);
             if (itemIdOpt.isEmpty()) {
-                LOGGER.debug("Item '{}': not yet known to the database — skipping", itemName);
+                logger.debug("Item '{}': not yet known to the database — skipping", itemName);
                 skipped++;
                 continue;
             }
@@ -134,12 +139,12 @@ public class TimescaleDBDownsampleJob implements Runnable {
                 downsampleItem(itemName, itemIdOpt.get(), configOpt.get());
                 success++;
             } catch (SQLException e) {
-                LOGGER.error("Downsampling failed for item '{}': {}", itemName, e.getMessage(), e);
+                logger.error("Downsampling failed for item '{}': {}", itemName, e.getMessage(), e);
                 failed++;
             }
         }
 
-        LOGGER.info("Downsampling job finished: {} succeeded, {} skipped, {} failed", success, skipped, failed);
+        logger.info("Downsampling job finished: {} succeeded, {} skipped, {} failed", success, skipped, failed);
     }
 
     private void downsampleItem(String itemName, int itemId, DownsampleConfig config) throws SQLException {
@@ -152,12 +157,12 @@ public class TimescaleDBDownsampleJob implements Runnable {
             try {
                 int inserted = executeUpdate(conn, sqlInsert, itemId);
                 int deleted = executeUpdate(conn, sqlDeleteRaw, itemId);
-                LOGGER.debug("Item '{}': aggregated {} bucket(s), deleted {} raw row(s)", itemName, inserted, deleted);
+                logger.debug("Item '{}': aggregated {} bucket(s), deleted {} raw row(s)", itemName, inserted, deleted);
 
                 if (config.retentionDays() > 0) {
                     String sqlRetention = SQL_DELETE_RETENTION_TEMPLATE.formatted(config.retentionDays());
                     int dropped = executeUpdate(conn, sqlRetention, itemId);
-                    LOGGER.debug("Item '{}': dropped {} row(s) outside {}d retention window", itemName, dropped,
+                    logger.debug("Item '{}': dropped {} row(s) outside {}d retention window", itemName, dropped,
                             config.retentionDays());
                 }
 

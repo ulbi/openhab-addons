@@ -42,12 +42,12 @@ import org.slf4j.LoggerFactory;
  * The only dynamically formatted strings are validated enum/allowlist values
  * (SQL operator, ORDER BY direction).
  *
- * @author openHAB Contributors - Initial contribution
+ * @author René Ulbricht - Initial contribution
  */
 @NonNullByDefault
 public class TimescaleDBQuery {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(TimescaleDBQuery.class);
+    private static final Logger logger = LoggerFactory.getLogger(TimescaleDBQuery.class);
 
     // --- INSERT ---
     private static final String SQL_INSERT = "INSERT INTO items (time, item_id, value, string, unit) VALUES (?, ?, ?, ?, ?)";
@@ -91,7 +91,7 @@ public class TimescaleDBQuery {
             ps.setString(5, row.unit());
             ps.executeUpdate();
         }
-        LOGGER.debug("Stored item_id={} at {} value={} string={} unit={}", itemId, timestamp, row.value(), row.string(),
+        logger.debug("Stored item_id={} at {} value={} string={} unit={}", itemId, timestamp, row.value(), row.string(),
                 row.unit());
     }
 
@@ -122,7 +122,7 @@ public class TimescaleDBQuery {
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     int id = rs.getInt(1);
-                    LOGGER.debug("Registered new item '{}' with item_id={}", name, id);
+                    logger.debug("Registered new item '{}' with item_id={}", name, id);
                     return id;
                 }
             }
@@ -168,7 +168,7 @@ public class TimescaleDBQuery {
                 sql.append(" AND value ").append(sqlOp).append(" ?");
                 params.add(filterValue);
             } else {
-                LOGGER.debug("State filter on non-numeric or unsupported state/operator — ignoring");
+                logger.debug("State filter on non-numeric or unsupported state/operator — ignoring");
             }
         }
 
@@ -186,7 +186,7 @@ public class TimescaleDBQuery {
             }
         }
 
-        LOGGER.debug("Query SQL: {} params={}", sql, params);
+        logger.debug("Query SQL: {} params={}", sql, params);
 
         List<HistoricItem> results = new ArrayList<>();
         try (PreparedStatement ps = connection.prepareStatement(sql.toString())) {
@@ -205,7 +205,7 @@ public class TimescaleDBQuery {
                 }
             }
         }
-        LOGGER.debug("Query returned {} items for item_id={}", results.size(), itemId);
+        logger.debug("Query returned {} items for item_id={}", results.size(), itemId);
         return results;
     }
 
@@ -234,14 +234,14 @@ public class TimescaleDBQuery {
             params.add(Timestamp.from(endDate.toInstant()));
         }
 
-        LOGGER.debug("Remove SQL: {} params={}", sql, params);
+        logger.debug("Remove SQL: {} params={}", sql, params);
 
         try (PreparedStatement ps = connection.prepareStatement(sql.toString())) {
             for (int i = 0; i < params.size(); i++) {
                 ps.setObject(i + 1, params.get(i));
             }
             int deleted = ps.executeUpdate();
-            LOGGER.debug("Deleted {} rows for item_id={}", deleted, itemId);
+            logger.debug("Deleted {} rows for item_id={}", deleted, itemId);
             return deleted;
         }
     }

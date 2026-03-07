@@ -43,6 +43,8 @@ import org.openhab.core.items.MetadataRegistry;
  * <li>Items not in the item_id cache are skipped gracefully</li>
  * <li>A per-item SQL error does not abort the entire job</li>
  * </ul>
+ *
+ * @author René Ulbricht - Initial contribution
  */
 class TimescaleDBDownsampleJobTest {
 
@@ -212,7 +214,7 @@ class TimescaleDBDownsampleJobTest {
                 .map(n -> new Metadata(new MetadataKey("timescaledb", n), "AVG", Map.of("downsampleInterval", "1h")))
                 .toList();
         // Return our specific metadata items for getAll()
-        when(registry.getAll()).thenReturn((java.util.Collection) metaList);
+        when(registry.getAll()).thenAnswer(inv -> metaList);
         // Also stub the individual get() calls if not already done
         for (String name : names) {
             MetadataKey key = new MetadataKey("timescaledb", name);

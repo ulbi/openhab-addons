@@ -15,7 +15,6 @@ package org.openhab.persistence.timescaledb.internal;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -30,6 +29,8 @@ import org.openhab.core.items.MetadataRegistry;
 
 /**
  * Unit tests for {@link TimescaleDBMetadataService}.
+ *
+ * @author René Ulbricht - Initial contribution
  */
 class TimescaleDBMetadataServiceTest {
 
@@ -105,7 +106,7 @@ class TimescaleDBMetadataServiceTest {
     // ------------------------------------------------------------------
 
     @ParameterizedTest
-    @ValueSource(strings = { "2h", "3m", "1w", "invalid", "" })
+    @ValueSource(strings = { "2h30m", "3m", "1w", "invalid", "" })
     void getDownsampleConfig_invalidInterval_returnsEmpty(String badInterval) {
         if (badInterval.isBlank()) {
             // handled by the missing-interval branch
@@ -166,7 +167,7 @@ class TimescaleDBMetadataServiceTest {
         Metadata noFunction = metadata("SensorB", "", Map.of("retentionDays", "30"));
         Metadata otherNamespace = new Metadata(new MetadataKey("influxdb", "SensorC"), "some", Map.of());
 
-        when(registry.getAll()).thenReturn((Collection) List.of(withFunction, noFunction, otherNamespace));
+        when(registry.getAll()).thenAnswer(inv -> List.of(withFunction, noFunction, otherNamespace));
 
         List<String> names = service.getItemNamesWithDownsampling();
 

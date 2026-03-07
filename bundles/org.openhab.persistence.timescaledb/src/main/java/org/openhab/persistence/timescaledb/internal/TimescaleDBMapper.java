@@ -70,12 +70,12 @@ import org.slf4j.LoggerFactory;
  * <li>{@link StringType} → string=raw value</li>
  * </ul>
  *
- * @author openHAB Contributors - Initial contribution
+ * @author René Ulbricht - Initial contribution
  */
 @NonNullByDefault
 public class TimescaleDBMapper {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(TimescaleDBMapper.class);
+    private static final Logger logger = LoggerFactory.getLogger(TimescaleDBMapper.class);
 
     private TimescaleDBMapper() {
         // utility class
@@ -126,7 +126,7 @@ public class TimescaleDBMapper {
         } else if (state instanceof StringType str) {
             return new Row(null, str.toString(), null);
         } else {
-            LOGGER.warn("Unsupported state type for TimescaleDB persistence: {}", state.getClass().getSimpleName());
+            logger.warn("Unsupported state type for TimescaleDB persistence: {}", state.getClass().getSimpleName());
             return null;
         }
     }
@@ -155,7 +155,7 @@ public class TimescaleDBMapper {
             try {
                 return new QuantityType<>(value + " " + unit);
             } catch (IllegalArgumentException e) {
-                LOGGER.warn("Failed to parse QuantityType for item '{}' with value={} unit={}: {}", item.getName(),
+                logger.warn("Failed to parse QuantityType for item '{}' with value={} unit={}: {}", item.getName(),
                         value, unit, e.getMessage());
                 return UnDefType.UNDEF;
             }
@@ -167,7 +167,7 @@ public class TimescaleDBMapper {
                 try {
                     return new HSBType(string);
                 } catch (IllegalArgumentException e) {
-                    LOGGER.warn("Failed to parse HSBType for item '{}': {}", item.getName(), e.getMessage());
+                    logger.warn("Failed to parse HSBType for item '{}': {}", item.getName(), e.getMessage());
                     return UnDefType.UNDEF;
                 }
             }
@@ -175,7 +175,7 @@ public class TimescaleDBMapper {
                 try {
                     return new DateTimeType(ZonedDateTime.parse(string));
                 } catch (Exception e) {
-                    LOGGER.warn("Failed to parse DateTimeType for item '{}': {}", item.getName(), e.getMessage());
+                    logger.warn("Failed to parse DateTimeType for item '{}': {}", item.getName(), e.getMessage());
                     return UnDefType.UNDEF;
                 }
             }
@@ -183,7 +183,7 @@ public class TimescaleDBMapper {
                 try {
                     return new PointType(string);
                 } catch (IllegalArgumentException e) {
-                    LOGGER.warn("Failed to parse PointType for item '{}': {}", item.getName(), e.getMessage());
+                    logger.warn("Failed to parse PointType for item '{}': {}", item.getName(), e.getMessage());
                     return UnDefType.UNDEF;
                 }
             }
@@ -191,7 +191,7 @@ public class TimescaleDBMapper {
                 try {
                     return PlayPauseType.valueOf(string);
                 } catch (IllegalArgumentException e) {
-                    LOGGER.warn("Failed to parse PlayPauseType for item '{}': {}", item.getName(), e.getMessage());
+                    logger.warn("Failed to parse PlayPauseType for item '{}': {}", item.getName(), e.getMessage());
                     return UnDefType.UNDEF;
                 }
             }
@@ -204,7 +204,7 @@ public class TimescaleDBMapper {
                     String mimeType = unit != null ? unit : "application/octet-stream";
                     return new RawType(bytes, mimeType);
                 } catch (IllegalArgumentException e) {
-                    LOGGER.warn("Failed to decode RawType for item '{}': {}", item.getName(), e.getMessage());
+                    logger.warn("Failed to decode RawType for item '{}': {}", item.getName(), e.getMessage());
                     return UnDefType.UNDEF;
                 }
             }
@@ -228,7 +228,7 @@ public class TimescaleDBMapper {
             return new DecimalType(value);
         }
 
-        LOGGER.warn("Cannot reconstruct state for item '{}': value=null, string=null, unit=null", item.getName());
+        logger.warn("Cannot reconstruct state for item '{}': value=null, string=null, unit=null", item.getName());
         return UnDefType.UNDEF;
     }
 
