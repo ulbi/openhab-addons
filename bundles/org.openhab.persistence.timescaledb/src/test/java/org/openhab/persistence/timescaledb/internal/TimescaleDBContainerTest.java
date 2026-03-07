@@ -70,6 +70,7 @@ import org.openhab.core.types.State;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -93,7 +94,8 @@ import com.zaxxer.hikari.HikariDataSource;
 class TimescaleDBContainerTest {
 
     @Container
-    static PostgreSQLContainer<?> db = new PostgreSQLContainer<>("timescale/timescaledb:latest-pg16")
+    static PostgreSQLContainer<?> db = new PostgreSQLContainer<>(
+            DockerImageName.parse("timescale/timescaledb:latest-pg16").asCompatibleSubstituteFor("postgres"))
             .withDatabaseName("openhab_test").withUsername("openhab").withPassword("openhab");
 
     private static HikariDataSource dataSource;
