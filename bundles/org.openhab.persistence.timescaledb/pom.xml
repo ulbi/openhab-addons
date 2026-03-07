@@ -15,7 +15,7 @@
   <name>openHAB Add-ons :: Bundles :: Persistence Service :: TimescaleDB</name>
 
   <properties>
-    <bnd.importpackage>!com.codahale.metrics.*,!io.prometheus.*</bnd.importpackage>
+    <bnd.importpackage>!com.codahale.metrics.*,!io.prometheus.*,!org.checkerframework.*,!org.jetbrains.annotations.*,!org.hibernate.*,!waffle.windows.auth.*,!org.osgi.service.jdbc.*</bnd.importpackage>
     <postgresql.version>42.7.9</postgresql.version>
     <hikari.version>5.1.0</hikari.version>
   </properties>
