@@ -13,7 +13,6 @@
 package org.openhab.binding.netatmo.internal.handler;
 
 import java.time.Duration;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -85,8 +84,6 @@ public interface CommonInterface {
 
     @Nullable
     Bridge getBridge();
-
-    ZoneId getSystemTimeZone();
 
     default @Nullable CommonInterface getBridgeHandler() {
         Bridge bridge = getBridge();
@@ -187,17 +184,22 @@ public interface CommonInterface {
                 return;
             }
         }
+
         String finalReason = null;
         for (Capability cap : getCapabilities().values()) {
-            String thingStatusReason = cap.setNewData(newData);
-            if (thingStatusReason != null) {
-                finalReason = thingStatusReason;
+            String statusReason = cap.setNewData(newData);
+            if (statusReason != null) {
+                finalReason = statusReason;
             }
         }
+
+        if (newData.isIgnoredForThingUpdate()) {
+            return;
+        }
+
         // Prevent turning ONLINE myself if in the meantime something turned account OFFLINE
-        ApiBridgeHandler accountHandler = getAccountHandler();
-        if (accountHandler != null && accountHandler.isConnected() && !newData.isIgnoredForThingUpdate()) {
-            setThingStatus(finalReason == null ? ThingStatus.ONLINE : ThingStatus.OFFLINE, ThingStatusDetail.NONE,
+        if (getAccountHandler() instanceof ApiBridgeHandler accountHandler && accountHandler.isConnected()) {
+            setThingStatus(finalReason != null ? ThingStatus.OFFLINE : ThingStatus.ONLINE, ThingStatusDetail.NONE,
                     finalReason);
         }
     }

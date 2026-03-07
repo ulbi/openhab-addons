@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -87,6 +88,7 @@ import org.openhab.binding.shelly.internal.api2.Shelly2ApiJsonDTO.ShellyScriptLi
 import org.openhab.binding.shelly.internal.api2.Shelly2ApiJsonDTO.ShellyScriptListResponse.ShellyScriptListEntry;
 import org.openhab.binding.shelly.internal.api2.Shelly2ApiJsonDTO.ShellyScriptPutCodeParams;
 import org.openhab.binding.shelly.internal.api2.Shelly2ApiJsonDTO.ShellyScriptResponse;
+import org.openhab.binding.shelly.internal.config.ShellyThingConfiguration;
 import org.openhab.binding.shelly.internal.handler.ShellyThingInterface;
 import org.openhab.binding.shelly.internal.handler.ShellyThingTable;
 import org.openhab.binding.shelly.internal.util.ShellyVersionDTO;
@@ -131,7 +133,8 @@ public class Shelly2ApiRpc extends Shelly2ApiClient implements ShellyApiInterfac
     }
 
     @Override
-    public void initialize() throws ShellyApiException {
+    public void initialize(String thingName, ShellyThingConfiguration config) throws ShellyApiException {
+        setConfig(thingName, config);
         if (initialized) {
             logger.debug("{}: Disconnect Rpc Socket on initialize", thingName);
             disconnect();
@@ -211,9 +214,9 @@ public class Shelly2ApiRpc extends Shelly2ApiClient implements ShellyApiInterfac
         profile.hasRelays = profile.numRelays > 0 || profile.numRollers > 0;
 
         ShellySettingsDevice device = profile.device;
-        if (config.serviceName.isBlank()) {
-            config.serviceName = getString(profile.device.hostname);
-            logger.trace("{}: {} is used as serviceName", thingName, config.serviceName);
+        if (config.realm.isBlank()) {
+            config.realm = getString(profile.device.hostname);
+            logger.trace("{}: {} is used as realm", thingName, config.realm);
         }
         profile.settings.fw = getString(device.fw);
         profile.fwDate = substringBefore(substringBefore(device.fw, "/"), "-");
@@ -331,9 +334,11 @@ public class Shelly2ApiRpc extends Shelly2ApiClient implements ShellyApiInterfac
             profile.settings.ledPowerDisable = "off".equals(getString(dc.led.powerLed));
         }
 
+        if (!profile.initialized && profile.alwaysOn) {
+            getStatus(); // make sure profile.status is initialized (e.g,. relay/meter status)
+            asyncApiRequest(SHELLYRPC_METHOD_GETSTATUS); // request periodic status updates from device
+        }
         profile.initialized = true;
-        getStatus(); // make sure profile.status is initialized (e.g,. relay/meter status)
-        asyncApiRequest(SHELLYRPC_METHOD_GETSTATUS); // request periodic status updates from device
 
         try {
             if (profile.alwaysOn && dc.ble != null) {
@@ -429,7 +434,7 @@ public class Shelly2ApiRpc extends Shelly2ApiClient implements ShellyApiInterfac
             if (cl != null) {
                 try (InputStream inputStream = cl.getResourceAsStream(file)) {
                     if (inputStream != null) {
-                        code = new BufferedReader(new InputStreamReader(inputStream)).lines()
+                        code = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8)).lines()
                                 .collect(Collectors.joining("\n"));
                     }
                 } catch (IOException | UncheckedIOException e) {
@@ -478,7 +483,10 @@ public class Shelly2ApiRpc extends Shelly2ApiClient implements ShellyApiInterfac
                 if (ourId == -1) {
                     // find free script id
                     ourId = 0;
-                    for (ourId = 1; ourId <= MAX_SCRIPT_ID && testScriptId(scriptList, ourId); ourId++) {
+                    for (ourId = 1; ourId <= MAX_SCRIPT_ID; ourId++) {
+                        if (!testScriptId(scriptList, ourId)) {
+                            break;
+                        }
                     }
                 }
                 if (ourId <= MAX_SCRIPT_ID) {
@@ -1038,7 +1046,7 @@ public class Shelly2ApiRpc extends Shelly2ApiClient implements ShellyApiInterfac
     public ShellySettingsLogin setLoginCredentials(String user, String password) throws ShellyApiException {
         Shelly2RpcRequestParams params = new Shelly2RpcRequestParams();
         params.user = "admin";
-        params.realm = config.serviceName;
+        params.realm = config.realm;
         params.ha1 = sha256(params.user + ":" + params.realm + ":" + password);
         apiRequest(SHELLYRPC_METHOD_AUTHSET, params, String.class);
 
@@ -1285,6 +1293,7 @@ public class Shelly2ApiRpc extends Shelly2ApiClient implements ShellyApiInterfac
                             break;
                     }
                 }
+                req = buildRequest(method, params); // update RPC message id
                 json = rpcPost(gson.toJson(req));
             } else {
                 throw e;

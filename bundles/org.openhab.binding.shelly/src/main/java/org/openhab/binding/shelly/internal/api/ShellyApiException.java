@@ -23,11 +23,13 @@ import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.text.MessageFormat;
+import java.util.Locale;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.eclipse.jetty.io.EofException;
 
 import com.google.gson.JsonSyntaxException;
 
@@ -109,14 +111,15 @@ public class ShellyApiException extends Exception {
         Class<?> extype = !isEmpty() ? getCauseClass() : null;
         return (extype != null) && ((extype == TimeoutException.class) || extype == InterruptedException.class
                 || extype == SocketTimeoutException.class
-                || nonNullString(getMessage()).toLowerCase().contains("timeout"));
+                || nonNullString(getMessage()).toLowerCase(Locale.ROOT).contains("timeout"));
     }
 
     public boolean isConnectionError() {
         Class<?> exType = getCauseClass();
         return isUnknownHost() || isMalformedURL() || exType == ConnectException.class
                 || exType == SocketException.class || exType == PortUnreachableException.class
-                || exType == NoRouteToHostException.class || exType == EOFException.class;
+                || exType == NoRouteToHostException.class || exType == EofException.class
+                || exType == EOFException.class;
     }
 
     public boolean isNoRouteToHost() {

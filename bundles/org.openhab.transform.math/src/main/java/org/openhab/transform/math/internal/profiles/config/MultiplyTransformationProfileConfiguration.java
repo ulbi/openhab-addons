@@ -10,23 +10,18 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.solarforecast;
-
-import java.time.ZoneId;
+package org.openhab.transform.math.internal.profiles.config;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.openhab.core.i18n.TimeZoneProvider;
 
 /**
- * The {@link TimeZP} TimeZoneProvider for tests
+ * Holding configuration data for {@link MultiplyTransformationProfile).
  *
- * @author Bernd Weymann - Initial contribution
+ * @author Christoph Weitkamp - Initial contribution
  */
 @NonNullByDefault
-public class TimeZP implements TimeZoneProvider {
+public class MultiplyTransformationProfileConfiguration
+        extends AbstractArithmeticMathTransformationProfileConfiguration {
 
-    @Override
-    public ZoneId getTimeZone() {
-        return SolcastTest.TEST_ZONE;
-    }
+    public @NonNullByDefault({}) String multiplicand;
 }
