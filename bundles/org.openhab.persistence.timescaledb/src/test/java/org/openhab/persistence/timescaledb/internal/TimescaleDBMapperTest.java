@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.time.ZonedDateTime;
 import java.util.Base64;
+import java.util.Objects;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -74,7 +75,7 @@ class TimescaleDBMapperTest {
         var row = TimescaleDBMapper.toRow(new QuantityType<>("23.4 °C"));
         assertNotNull(row);
         assertNotNull(row.value());
-        assertEquals(23.4, row.value(), 1e-6);
+        assertEquals(23.4, Objects.requireNonNull(row.value()), 1e-6);
         assertNull(row.string());
         assertEquals("°C", row.unit());
     }
@@ -113,7 +114,7 @@ class TimescaleDBMapperTest {
     void toRow_PercentType() {
         var row = TimescaleDBMapper.toRow(new PercentType(75));
         assertNotNull(row);
-        assertEquals(75.0, row.value(), 1e-6);
+        assertEquals(75.0, Objects.requireNonNull(row.value()), 1e-6);
         assertNull(row.unit());
     }
 
@@ -164,9 +165,9 @@ class TimescaleDBMapperTest {
         var row = TimescaleDBMapper.toRow(new PointType("52.5,13.4,34.0"));
         assertNotNull(row);
         assertNull(row.value());
-        assertNotNull(row.string());
-        assertTrue(row.string().contains("52.5"));
-        assertTrue(row.string().contains("13.4"));
+        String pointStr = Objects.requireNonNull(row.string());
+        assertTrue(pointStr.contains("52.5"));
+        assertTrue(pointStr.contains("13.4"));
         assertNull(row.unit());
     }
 
@@ -191,8 +192,7 @@ class TimescaleDBMapperTest {
         var row = TimescaleDBMapper.toRow(new StringListType("Alice", "Bob", "Charlie"));
         assertNotNull(row);
         assertNull(row.value());
-        assertNotNull(row.string());
-        assertTrue(row.string().contains("Alice"));
+        assertTrue(Objects.requireNonNull(row.string()).contains("Alice"));
         assertNull(row.unit());
     }
 
@@ -205,7 +205,7 @@ class TimescaleDBMapperTest {
         assertNotNull(row.string());
         assertEquals("image/png", row.unit());
         // Verify round-trip base64
-        byte[] decoded = Base64.getDecoder().decode(row.string());
+        byte[] decoded = Base64.getDecoder().decode(Objects.requireNonNull(row.string()));
         assertArrayEquals(bytes, decoded);
     }
 

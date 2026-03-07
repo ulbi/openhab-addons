@@ -15,7 +15,6 @@ package org.openhab.persistence.timescaledb.internal;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -168,7 +167,7 @@ class TimescaleDBMetadataServiceTest {
         Metadata noFunction = metadata("SensorB", "", Map.of("retentionDays", "30"));
         Metadata otherNamespace = new Metadata(new MetadataKey("influxdb", "SensorC"), "some", Map.of());
 
-        when(registry.getAll()).thenReturn((Collection) List.of(withFunction, noFunction, otherNamespace));
+        when(registry.getAll()).thenAnswer(inv -> List.of(withFunction, noFunction, otherNamespace));
 
         List<String> names = service.getItemNamesWithDownsampling();
 

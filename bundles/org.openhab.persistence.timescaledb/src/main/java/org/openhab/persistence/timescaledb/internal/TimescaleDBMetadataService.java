@@ -46,7 +46,7 @@ import org.slf4j.LoggerFactory;
 @Component(service = TimescaleDBMetadataService.class)
 public class TimescaleDBMetadataService {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(TimescaleDBMetadataService.class);
+    private static final Logger logger = LoggerFactory.getLogger(TimescaleDBMetadataService.class);
 
     /** The metadata namespace used by this persistence service. */
     public static final String METADATA_NAMESPACE = "timescaledb";
@@ -109,7 +109,7 @@ public class TimescaleDBMetadataService {
         try {
             function = AggregationFunction.valueOf(functionStr.trim().toUpperCase());
         } catch (IllegalArgumentException e) {
-            LOGGER.warn("Item '{}': unknown aggregation function '{}' in timescaledb metadata — skipping", itemName,
+            logger.warn("Item '{}': unknown aggregation function '{}' in timescaledb metadata — skipping", itemName,
                     functionStr);
             return Optional.empty();
         }
@@ -118,7 +118,7 @@ public class TimescaleDBMetadataService {
 
         String intervalStr = getString(config, "downsampleInterval", null);
         if (intervalStr == null || intervalStr.isBlank()) {
-            LOGGER.warn("Item '{}': timescaledb metadata has function '{}' but no downsampleInterval — skipping",
+            logger.warn("Item '{}': timescaledb metadata has function '{}' but no downsampleInterval — skipping",
                     itemName, functionStr);
             return Optional.empty();
         }
@@ -127,7 +127,7 @@ public class TimescaleDBMetadataService {
         try {
             sqlInterval = DownsampleConfig.toSqlInterval(intervalStr);
         } catch (IllegalArgumentException e) {
-            LOGGER.warn("Item '{}': {}", itemName, e.getMessage());
+            logger.warn("Item '{}': {}", itemName, e.getMessage());
             return Optional.empty();
         }
 
@@ -135,7 +135,7 @@ public class TimescaleDBMetadataService {
         int retentionDays = getInt(config, "retentionDays", DEFAULT_RETENTION_DAYS);
 
         DownsampleConfig result = new DownsampleConfig(function, sqlInterval, retainRawDays, retentionDays);
-        LOGGER.debug("Item '{}': parsed DownsampleConfig {}", itemName, result);
+        logger.debug("Item '{}': parsed DownsampleConfig {}", itemName, result);
         return Optional.of(result);
     }
 
@@ -153,7 +153,7 @@ public class TimescaleDBMetadataService {
         try {
             return Integer.parseInt(val.toString());
         } catch (NumberFormatException e) {
-            LOGGER.warn("Invalid integer value '{}' for metadata key '{}', using default {}", val, key, defaultValue);
+            logger.warn("Invalid integer value '{}' for metadata key '{}', using default {}", val, key, defaultValue);
             return defaultValue;
         }
     }

@@ -94,9 +94,16 @@ import com.zaxxer.hikari.HikariDataSource;
 class TimescaleDBContainerTest {
 
     @Container
-    static PostgreSQLContainer<?> db = new PostgreSQLContainer<>(
-            DockerImageName.parse("timescale/timescaledb:latest-pg16").asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("openhab_test").withUsername("openhab").withPassword("openhab");
+    static final PostgreSQLContainer<?> db;
+
+    static {
+        var container = new PostgreSQLContainer<>(
+                DockerImageName.parse("timescale/timescaledb:latest-pg16").asCompatibleSubstituteFor("postgres"));
+        container.withDatabaseName("openhab_test");
+        container.withUsername("openhab");
+        container.withPassword("openhab");
+        db = container;
+    }
 
     private static HikariDataSource dataSource;
 
@@ -416,8 +423,6 @@ class TimescaleDBContainerTest {
     @Test
     @Order(50)
     void downsampleJob_aggregatesRawRowsAndDeletesThem() throws SQLException {
-        NumberItem item = new NumberItem("DownsampleSensor");
-
         // Seed 6 raw rows: 3 buckets of 2h each, all older than retainRawDays=0 (use 0 for test)
         // We use retainRawDays=0 so the job processes all rows immediately (NOW() - 0 days)
         ZonedDateTime base = ZonedDateTime.now().minusDays(1);
@@ -438,7 +443,7 @@ class TimescaleDBContainerTest {
         Metadata meta = new Metadata(new MetadataKey("timescaledb", "DownsampleSensor"), "AVG",
                 Map.of("downsampleInterval", "2h", "retainRawDays", "0"));
         when(metadataRegistry.get(new MetadataKey("timescaledb", "DownsampleSensor"))).thenReturn(meta);
-        when(metadataRegistry.getAll()).thenReturn((java.util.Collection) List.of(meta));
+        when(metadataRegistry.getAll()).thenAnswer(inv -> List.of(meta));
 
         TimescaleDBMetadataService metaService = new TimescaleDBMetadataService(metadataRegistry);
 
@@ -495,7 +500,7 @@ class TimescaleDBContainerTest {
         Metadata meta = new Metadata(new MetadataKey("timescaledb", "RetentionSensor"), "AVG",
                 Map.of("downsampleInterval", "1h", "retainRawDays", "0", "retentionDays", "30"));
         when(mr.get(new MetadataKey("timescaledb", "RetentionSensor"))).thenReturn(meta);
-        when(mr.getAll()).thenReturn((java.util.Collection) List.of(meta));
+        when(mr.getAll()).thenAnswer(inv -> List.of(meta));
 
         TimescaleDBMetadataService ms = new TimescaleDBMetadataService(mr);
 

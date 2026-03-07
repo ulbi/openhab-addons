@@ -36,7 +36,7 @@ import org.slf4j.LoggerFactory;
 @NonNullByDefault
 public class TimescaleDBSchema {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(TimescaleDBSchema.class);
+    private static final Logger logger = LoggerFactory.getLogger(TimescaleDBSchema.class);
 
     private static final String SQL_CREATE_ITEM_META = """
             CREATE TABLE IF NOT EXISTS item_meta (
@@ -100,7 +100,7 @@ public class TimescaleDBSchema {
         if (retentionDays > 0) {
             setupRetentionPolicy(connection, retentionDays);
         }
-        LOGGER.info("TimescaleDB schema initialized (chunkInterval={}, compression={}d, retention={}d)", chunkInterval,
+        logger.info("TimescaleDB schema initialized (chunkInterval={}, compression={}d, retention={}d)", chunkInterval,
                 compressionAfterDays, retentionDays);
     }
 
@@ -110,23 +110,23 @@ public class TimescaleDBSchema {
                 throw new SQLException("TimescaleDB extension is not installed in the target database. "
                         + "Run 'CREATE EXTENSION IF NOT EXISTS timescaledb;' first.");
             }
-            LOGGER.debug("TimescaleDB extension found");
+            logger.debug("TimescaleDB extension found");
         }
     }
 
     private static void createTables(Connection connection, String chunkInterval) throws SQLException {
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(SQL_CREATE_ITEM_META);
-            LOGGER.debug("Table item_meta ready");
+            logger.debug("Table item_meta ready");
 
             stmt.execute(SQL_CREATE_ITEMS);
-            LOGGER.debug("Table items ready");
+            logger.debug("Table items ready");
 
             stmt.execute(SQL_CREATE_HYPERTABLE.formatted(chunkInterval));
-            LOGGER.debug("Hypertable configured with chunk interval '{}'", chunkInterval);
+            logger.debug("Hypertable configured with chunk interval '{}'", chunkInterval);
 
             stmt.execute(SQL_CREATE_INDEX);
-            LOGGER.debug("Index on (item_id, time DESC) ready");
+            logger.debug("Index on (item_id, time DESC) ready");
         }
     }
 
@@ -134,14 +134,14 @@ public class TimescaleDBSchema {
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(SQL_ENABLE_COMPRESSION);
             stmt.execute(SQL_ADD_COMPRESSION_POLICY.formatted(compressionAfterDays));
-            LOGGER.info("Compression policy set: compress after {} days", compressionAfterDays);
+            logger.info("Compression policy set: compress after {} days", compressionAfterDays);
         }
     }
 
     private static void setupRetentionPolicy(Connection connection, int retentionDays) throws SQLException {
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(SQL_ADD_RETENTION_POLICY.formatted(retentionDays));
-            LOGGER.info("Retention policy set: drop data older than {} days", retentionDays);
+            logger.info("Retention policy set: drop data older than {} days", retentionDays);
         }
     }
 }

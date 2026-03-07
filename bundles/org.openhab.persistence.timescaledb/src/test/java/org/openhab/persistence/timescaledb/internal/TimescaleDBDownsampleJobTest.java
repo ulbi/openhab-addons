@@ -214,7 +214,7 @@ class TimescaleDBDownsampleJobTest {
                 .map(n -> new Metadata(new MetadataKey("timescaledb", n), "AVG", Map.of("downsampleInterval", "1h")))
                 .toList();
         // Return our specific metadata items for getAll()
-        when(registry.getAll()).thenReturn((java.util.Collection) metaList);
+        when(registry.getAll()).thenAnswer(inv -> metaList);
         // Also stub the individual get() calls if not already done
         for (String name : names) {
             MetadataKey key = new MetadataKey("timescaledb", name);

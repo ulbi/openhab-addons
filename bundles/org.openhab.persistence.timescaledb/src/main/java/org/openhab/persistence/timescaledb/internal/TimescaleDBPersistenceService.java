@@ -73,7 +73,7 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
 
     static final String CONFIG_URI = "persistence:timescaledb";
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(TimescaleDBPersistenceService.class);
+    private static final Logger logger = LoggerFactory.getLogger(TimescaleDBPersistenceService.class);
     private static final String THREAD_POOL_NAME = "timescaledb";
 
     private static final String SERVICE_ID = "timescaledb";
@@ -99,7 +99,7 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
     public void activate(final Map<String, Object> config) {
         String url = (String) config.getOrDefault("url", "");
         if (url.isBlank()) {
-            LOGGER.warn("TimescaleDB persistence not configured: missing 'url'. "
+            logger.warn("TimescaleDB persistence not configured: missing 'url'. "
                     + "Configure org.openhab.persistence.timescaledb:url.");
             return;
         }
@@ -112,7 +112,7 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
         int retentionDays = parseIntConfig(config, "retentionDays", 0);
         int compressionAfterDays = parseIntConfig(config, "compressionAfterDays", 0);
 
-        LOGGER.debug(
+        logger.debug(
                 "Activating TimescaleDB persistence: url={}, user={}, maxConnections={}, "
                         + "chunkInterval={}, retentionDays={}, compressionAfterDays={}",
                 url, user, maxConnections, chunkInterval, retentionDays, compressionAfterDays);
@@ -121,7 +121,7 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
         try {
             ds = createDataSource(url, user, password, maxConnections, connectTimeout);
         } catch (Exception e) {
-            LOGGER.error("Failed to create TimescaleDB connection pool: {}", e.getMessage(), e);
+            logger.error("Failed to create TimescaleDB connection pool: {}", e.getMessage(), e);
             return;
         }
         dataSource = ds;
@@ -129,7 +129,7 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
         try (Connection conn = ds.getConnection()) {
             TimescaleDBSchema.initialize(conn, chunkInterval, compressionAfterDays, retentionDays);
         } catch (SQLException e) {
-            LOGGER.error("Failed to initialize TimescaleDB schema: {}", e.getMessage(), e);
+            logger.error("Failed to initialize TimescaleDB schema: {}", e.getMessage(), e);
             ds.close();
             dataSource = null;
             return;
@@ -139,16 +139,16 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
         TimescaleDBDownsampleJob job = new TimescaleDBDownsampleJob(ds, metadataService,
                 name -> Optional.ofNullable(itemIdCache.get(name)));
         long initialDelay = secondsUntilMidnight();
-        downsampleJob = ThreadPoolManager.getScheduledPool(THREAD_POOL_NAME).scheduleAtFixedRate(job, initialDelay,
+        downsampleJob = ThreadPoolManager.getScheduledPool(THREAD_POOL_NAME).scheduleWithFixedDelay(job, initialDelay,
                 TimeUnit.DAYS.toSeconds(1), TimeUnit.SECONDS);
-        LOGGER.info("Downsampling job scheduled: first run in {}s, then every 24h", initialDelay);
+        logger.info("Downsampling job scheduled: first run in {}s, then every 24h", initialDelay);
 
-        LOGGER.info("TimescaleDB persistence service activated");
+        logger.info("TimescaleDB persistence service activated");
     }
 
     @Deactivate
     public void deactivate() {
-        LOGGER.debug("Deactivating TimescaleDB persistence service");
+        logger.debug("Deactivating TimescaleDB persistence service");
         itemIdCache.clear();
 
         ScheduledFuture<?> job = downsampleJob;
@@ -162,7 +162,7 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
             ds.close();
             dataSource = null;
         }
-        LOGGER.info("TimescaleDB persistence service deactivated");
+        logger.info("TimescaleDB persistence service deactivated");
     }
 
     // -------------------------------------------------------------------------
@@ -206,7 +206,7 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
     @Override
     public void store(Item item, ZonedDateTime date, State state, @Nullable String alias) {
         if (state instanceof UnDefType) {
-            LOGGER.trace("Skipping store for item '{}': state is UnDefType", item.getName());
+            logger.trace("Skipping store for item '{}': state is UnDefType", item.getName());
             return;
         }
 
@@ -222,7 +222,7 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
 
         HikariDataSource ds = dataSource;
         if (ds == null) {
-            LOGGER.warn("TimescaleDB data source not available — cannot store item '{}'", name);
+            logger.warn("TimescaleDB data source not available — cannot store item '{}'", name);
             return;
         }
 
@@ -230,7 +230,7 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
             int itemId = getOrCreateItemId(conn, name, label);
             TimescaleDBQuery.insert(conn, itemId, date, row);
         } catch (SQLException e) {
-            LOGGER.error("Failed to store item '{}': {}", name, e.getMessage(), e);
+            logger.error("Failed to store item '{}': {}", name, e.getMessage(), e);
         }
     }
 
@@ -243,7 +243,7 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
     public Iterable<HistoricItem> query(FilterCriteria filter, @Nullable String alias) {
         String itemName = filter.getItemName();
         if (itemName == null) {
-            LOGGER.warn("FilterCriteria has no item name — returning empty query result");
+            logger.warn("FilterCriteria has no item name — returning empty query result");
             return Collections.emptyList();
         }
 
@@ -252,7 +252,7 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
         @Nullable
         Integer itemId = itemIdCache.get(queryName);
         if (itemId == null) {
-            LOGGER.debug("Item '{}' not yet known to TimescaleDB — returning empty query result", queryName);
+            logger.debug("Item '{}' not yet known to TimescaleDB — returning empty query result", queryName);
             return Collections.emptyList();
         }
 
@@ -260,20 +260,20 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
         try {
             item = itemRegistry.getItem(itemName);
         } catch (ItemNotFoundException e) {
-            LOGGER.warn("Item '{}' not found in ItemRegistry — returning empty query result", itemName);
+            logger.warn("Item '{}' not found in ItemRegistry — returning empty query result", itemName);
             return Collections.emptyList();
         }
 
         HikariDataSource ds = dataSource;
         if (ds == null) {
-            LOGGER.warn("TimescaleDB data source not available — returning empty query result");
+            logger.warn("TimescaleDB data source not available — returning empty query result");
             return Collections.emptyList();
         }
 
         try (Connection conn = ds.getConnection()) {
             return TimescaleDBQuery.query(conn, item, itemId, filter);
         } catch (SQLException e) {
-            LOGGER.error("Query failed for item '{}': {}", queryName, e.getMessage(), e);
+            logger.error("Query failed for item '{}': {}", queryName, e.getMessage(), e);
             return Collections.emptyList();
         }
     }
@@ -282,29 +282,29 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
     public boolean remove(FilterCriteria filter) {
         String itemName = filter.getItemName();
         if (itemName == null) {
-            LOGGER.warn("FilterCriteria has no item name — cannot remove data");
+            logger.warn("FilterCriteria has no item name — cannot remove data");
             return false;
         }
 
         @Nullable
         Integer itemId = itemIdCache.get(itemName);
         if (itemId == null) {
-            LOGGER.debug("Item '{}' not yet known to TimescaleDB — nothing to remove", itemName);
+            logger.debug("Item '{}' not yet known to TimescaleDB — nothing to remove", itemName);
             return false;
         }
 
         HikariDataSource ds = dataSource;
         if (ds == null) {
-            LOGGER.warn("TimescaleDB data source not available — cannot remove data for item '{}'", itemName);
+            logger.warn("TimescaleDB data source not available — cannot remove data for item '{}'", itemName);
             return false;
         }
 
         try (Connection conn = ds.getConnection()) {
             int deleted = TimescaleDBQuery.remove(conn, itemId, filter);
-            LOGGER.debug("Removed {} row(s) for item '{}'", deleted, itemName);
+            logger.debug("Removed {} row(s) for item '{}'", deleted, itemName);
             return true;
         } catch (SQLException e) {
-            LOGGER.error("Failed to remove data for item '{}': {}", itemName, e.getMessage(), e);
+            logger.error("Failed to remove data for item '{}': {}", itemName, e.getMessage(), e);
             return false;
         }
     }
@@ -343,7 +343,7 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
         try {
             return Integer.parseInt(val.toString());
         } catch (NumberFormatException e) {
-            LOGGER.warn("Invalid integer value '{}' for config key '{}', using default {}", val, key, defaultValue);
+            logger.warn("Invalid integer value '{}' for config key '{}', using default {}", val, key, defaultValue);
             return defaultValue;
         }
     }

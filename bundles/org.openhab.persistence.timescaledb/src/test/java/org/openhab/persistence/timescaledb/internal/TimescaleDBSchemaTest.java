@@ -76,8 +76,8 @@ class TimescaleDBSchemaTest {
 
         TimescaleDBSchema.initialize(connection, "14 days", 0, 0);
 
-        String hypertableSql = capturedSql.stream().filter(s -> s.contains("create_hypertable")).findFirst().orElse("");
-        assertTrue(hypertableSql.contains("14 days"), "Hypertable should use configured chunk interval");
+        assertTrue(capturedSql.stream().anyMatch(s -> s.contains("create_hypertable") && s.contains("14 days")),
+                "Hypertable should use configured chunk interval");
     }
 
     @Test
@@ -96,9 +96,8 @@ class TimescaleDBSchemaTest {
         assertTrue(hasPolicy, "Should add compression policy");
 
         // Policy should reference the configured number of days
-        String policyCall = capturedSql.stream().filter(s -> s.contains("add_compression_policy")).findFirst()
-                .orElse("");
-        assertTrue(policyCall.contains("30"), "Compression policy should reference 30 days");
+        assertTrue(capturedSql.stream().anyMatch(s -> s.contains("add_compression_policy") && s.contains("30")),
+                "Compression policy should reference 30 days");
     }
 
     @Test
@@ -125,10 +124,10 @@ class TimescaleDBSchemaTest {
 
         TimescaleDBSchema.initialize(connection, "7 days", 0, 365);
 
-        String retentionSql = capturedSql.stream().filter(s -> s.contains("add_retention_policy")).findFirst()
-                .orElse("");
-        assertFalse(retentionSql.isBlank(), "Should add retention policy");
-        assertTrue(retentionSql.contains("365"), "Retention policy should reference 365 days");
+        assertTrue(capturedSql.stream().anyMatch(s -> s.contains("add_retention_policy")),
+                "Should add retention policy");
+        assertTrue(capturedSql.stream().anyMatch(s -> s.contains("add_retention_policy") && s.contains("365")),
+                "Retention policy should reference 365 days");
     }
 
     @Test
@@ -152,7 +151,8 @@ class TimescaleDBSchemaTest {
         SQLException ex = assertThrows(SQLException.class,
                 () -> TimescaleDBSchema.initialize(connection, "7 days", 0, 0));
 
-        assertTrue(ex.getMessage().contains("TimescaleDB extension"),
-                "Error message should mention TimescaleDB extension");
+        String msg = ex.getMessage();
+        assertNotNull(msg, "Exception must have a message");
+        assertTrue(msg.contains("TimescaleDB extension"), "Error message should mention TimescaleDB extension");
     }
 }
