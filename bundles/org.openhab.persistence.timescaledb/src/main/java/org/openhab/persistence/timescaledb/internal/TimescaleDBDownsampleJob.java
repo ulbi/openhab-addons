@@ -51,7 +51,7 @@ public class TimescaleDBDownsampleJob implements Runnable {
 
     /**
      * INSERT aggregated rows for one item.
-     * Placeholders: (1) item_id, (2) item_id (GROUP BY).
+     * Placeholder: (1) item_id.
      * Interval and agg-fn are pre-validated strings from the allowlist/enum.
      */
     private static final String SQL_INSERT_AGGREGATED_TEMPLATE = """
@@ -67,7 +67,6 @@ public class TimescaleDBDownsampleJob implements Runnable {
               AND downsampled = FALSE
               AND time < NOW() - INTERVAL '%d days'
             GROUP BY time_bucket('%s', time), item_id
-            ON CONFLICT DO NOTHING
             """;
 
     /**

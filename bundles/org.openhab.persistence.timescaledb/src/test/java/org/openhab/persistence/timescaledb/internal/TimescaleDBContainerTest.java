@@ -540,7 +540,7 @@ class TimescaleDBContainerTest {
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement ps = conn.prepareStatement("SELECT COUNT(*) FROM timescaledb_information.jobs "
-                        + "WHERE application_name LIKE '%Compression%' AND hypertable_name = 'items'");
+                        + "WHERE proc_name LIKE '%compression%' AND hypertable_name = 'items'");
                 ResultSet rs = ps.executeQuery()) {
             assertTrue(rs.next());
             assertTrue(rs.getInt(1) > 0, "A compression policy job should be registered");
@@ -560,7 +560,7 @@ class TimescaleDBContainerTest {
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement ps = conn.prepareStatement("SELECT COUNT(*) FROM timescaledb_information.jobs "
-                        + "WHERE application_name LIKE '%Retention%' AND hypertable_name = 'items'");
+                        + "WHERE proc_name LIKE '%retention%' AND hypertable_name = 'items'");
                 ResultSet rs = ps.executeQuery()) {
             assertTrue(rs.next());
             assertTrue(rs.getInt(1) > 0, "A retention policy job should be registered");
