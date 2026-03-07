@@ -118,6 +118,7 @@ Number:Temperature Sensor_Temp_Outdoor {
 ### Configuration in mainUI
 
 `Item → Metadata → Add Metadata → Enter namespace "timescaledb"`:
+
 - Value: `AVG`
 - Additional config: `downsampleInterval=1h`, `retainRawDays=5`
 
