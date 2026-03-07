@@ -67,9 +67,9 @@ import org.openhab.core.persistence.FilterCriteria;
 import org.openhab.core.persistence.FilterCriteria.Ordering;
 import org.openhab.core.persistence.HistoricItem;
 import org.openhab.core.types.State;
-import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import com.zaxxer.hikari.HikariConfig;
@@ -94,10 +94,10 @@ import com.zaxxer.hikari.HikariDataSource;
 class TimescaleDBContainerTest {
 
     @Container
-    static final PostgreSQLContainer<?> db;
+    static final PostgreSQLContainer db;
 
     static {
-        var container = new PostgreSQLContainer<>(
+        var container = new PostgreSQLContainer(
                 DockerImageName.parse("timescale/timescaledb:latest-pg16").asCompatibleSubstituteFor("postgres"));
         container.withDatabaseName("openhab_test");
         container.withUsername("openhab");
@@ -425,7 +425,8 @@ class TimescaleDBContainerTest {
     void downsampleJob_aggregatesRawRowsAndDeletesThem() throws SQLException {
         // Seed 6 raw rows: 3 buckets of 2h each, all older than retainRawDays=0 (use 0 for test)
         // We use retainRawDays=0 so the job processes all rows immediately (NOW() - 0 days)
-        ZonedDateTime base = ZonedDateTime.now().minusDays(1);
+        // Base is truncated to midnight so each pair falls in a distinct 2h time_bucket
+        ZonedDateTime base = ZonedDateTime.now().minusDays(1).withHour(0).withMinute(0).withSecond(0).withNano(0);
         try (Connection conn = dataSource.getConnection()) {
             int id = TimescaleDBQuery.getOrCreateItemId(conn, "DownsampleSensor", null);
 
@@ -538,9 +539,20 @@ class TimescaleDBContainerTest {
             TimescaleDBSchema.initialize(conn, "7 days", 30, 0);
         }
 
+        // Verify compression is enabled on the hypertable
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement ps = conn.prepareStatement("SELECT COUNT(*) FROM timescaledb_information.jobs "
-                        + "WHERE proc_name LIKE '%compression%' AND hypertable_name = 'items'");
+                PreparedStatement ps = conn
+                        .prepareStatement("SELECT compression_enabled FROM timescaledb_information.hypertables "
+                                + "WHERE hypertable_name = 'items'");
+                ResultSet rs = ps.executeQuery()) {
+            assertTrue(rs.next(), "Hypertable 'items' should exist");
+            assertTrue(rs.getBoolean(1), "Compression should be enabled on the hypertable");
+        }
+        // Verify a background policy job was registered (table was freshly recreated, so any job is the compression
+        // job)
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement ps = conn.prepareStatement(
+                        "SELECT COUNT(*) FROM timescaledb_information.jobs WHERE hypertable_name = 'items'");
                 ResultSet rs = ps.executeQuery()) {
             assertTrue(rs.next());
             assertTrue(rs.getInt(1) > 0, "A compression policy job should be registered");
@@ -558,9 +570,10 @@ class TimescaleDBContainerTest {
             TimescaleDBSchema.initialize(conn, "7 days", 0, 365);
         }
 
+        // Verify a background policy job was registered (table was freshly recreated, so any job is the retention job)
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement ps = conn.prepareStatement("SELECT COUNT(*) FROM timescaledb_information.jobs "
-                        + "WHERE proc_name LIKE '%retention%' AND hypertable_name = 'items'");
+                PreparedStatement ps = conn.prepareStatement(
+                        "SELECT COUNT(*) FROM timescaledb_information.jobs WHERE hypertable_name = 'items'");
                 ResultSet rs = ps.executeQuery()) {
             assertTrue(rs.next());
             assertTrue(rs.getInt(1) > 0, "A retention policy job should be registered");

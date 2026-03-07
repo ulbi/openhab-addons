@@ -106,7 +106,7 @@ class TimescaleDBMetadataServiceTest {
     // ------------------------------------------------------------------
 
     @ParameterizedTest
-    @ValueSource(strings = { "2h", "3m", "1w", "invalid", "" })
+    @ValueSource(strings = { "2h30m", "3m", "1w", "invalid", "" })
     void getDownsampleConfig_invalidInterval_returnsEmpty(String badInterval) {
         if (badInterval.isBlank()) {
             // handled by the missing-interval branch
