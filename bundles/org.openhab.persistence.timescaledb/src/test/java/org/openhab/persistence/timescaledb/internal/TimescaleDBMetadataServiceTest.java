@@ -202,98 +202,28 @@ class TimescaleDBMetadataServiceTest {
     }
 
     // ------------------------------------------------------------------
-    // getUserTags — user-defined tag extraction
+    // getMetadataValue
     // ------------------------------------------------------------------
 
     @Test
-    void getUserTagsNometadataReturnsEmptyMap() {
+    void getMetadataValueNometadataReturnsNull() {
         when(registry.get(new MetadataKey("timescaledb", "Unknown"))).thenReturn(null);
 
-        assertTrue(service.getUserTags("Unknown").isEmpty());
+        assertNull(service.getMetadataValue("Unknown"));
     }
 
     @Test
-    void getUserTagsOnlyReservedKeysReturnsEmptyMap() {
-        // All config keys are reserved for downsampling — nothing should be returned as user tags
-        stubMetadata("MySensor", "AVG",
-                Map.of("downsampleInterval", "1h", "retainRawDays", "5", "retentionDays", "365"));
+    void getMetadataValueReturnsValueString() {
+        stubMetadata("MySensor", "AVG", Map.of("downsampleInterval", "1h"));
 
-        assertTrue(service.getUserTags("MySensor").isEmpty());
+        assertEquals("AVG", service.getMetadataValue("MySensor"));
     }
 
     @Test
-    void getUserTagsNonreservedKeysAreReturned() {
-        stubMetadata("MySensor", "AVG",
-                Map.of("downsampleInterval", "1h", "room", "Corridor", "kind", "zigbee"));
+    void getMetadataValueBlankValueIsReturnedAsIs() {
+        stubMetadata("MySensor", " ", Map.of("retentionDays", "30"));
 
-        var tags = service.getUserTags("MySensor");
-
-        assertEquals(2, tags.size());
-        assertEquals("Corridor", tags.get("room"));
-        assertEquals("zigbee", tags.get("kind"));
-        assertFalse(tags.containsKey("downsampleInterval"), "Reserved key must not appear in user tags");
-    }
-
-    @Test
-    void getUserTagsMixedKeysFiltersOutAllThreeReservedKeys() {
-        stubMetadata("MySensor", " ",
-                Map.of("retentionDays", "30", "retainRawDays", "5", "downsampleInterval", "1h",
-                        "location", "indoors", "floor", "2"));
-
-        var tags = service.getUserTags("MySensor");
-
-        assertEquals(2, tags.size(), "Only non-reserved keys should be returned");
-        assertEquals("indoors", tags.get("location"));
-        assertEquals("2", tags.get("floor"));
-    }
-
-    @Test
-    void getUserTagsValueIsNotIncludedInTags() {
-        // The metadata value (aggregation function or blank) must never appear as a user tag
-        stubMetadata("MySensor", "AVG", Map.of("room", "Kitchen"));
-
-        var tags = service.getUserTags("MySensor");
-
-        assertFalse(tags.containsKey("AVG"), "Metadata value must not appear as a user tag key");
-        assertFalse(tags.containsValue("AVG"), "Metadata value must not appear as a user tag value");
-        assertEquals(1, tags.size());
-        assertEquals("Kitchen", tags.get("room"));
-    }
-
-    @Test
-    void getUserTagsNullValueInConfigIsStoredAsEmptyString() {
-        MetadataKey key = new MetadataKey("timescaledb", "MySensor");
-        // Build a config map that contains a null value for a key
-        var config = new java.util.HashMap<String, Object>();
-        config.put("room", null);
-        Metadata meta = new Metadata(key, "", config);
-        when(registry.get(key)).thenReturn(meta);
-
-        var tags = service.getUserTags("MySensor");
-
-        assertTrue(tags.containsKey("room"), "Key with null value must still be present");
-        assertEquals("", tags.get("room"), "Null value must be stored as empty string");
-    }
-
-    @Test
-    void getUserTagsReturnedMapIsImmutable() {
-        stubMetadata("MySensor", "AVG", Map.of("room", "Corridor"));
-
-        var tags = service.getUserTags("MySensor");
-
-        assertThrows(UnsupportedOperationException.class, () -> tags.put("newKey", "newVal"),
-                "getUserTags must return an immutable map");
-    }
-
-    // ------------------------------------------------------------------
-    // RESERVED_KEYS constant
-    // ------------------------------------------------------------------
-
-    @Test
-    void reservedKeysContainsAllExpectedDownsamplingKeys() {
-        assertTrue(TimescaleDBMetadataService.RESERVED_KEYS.contains("downsampleInterval"));
-        assertTrue(TimescaleDBMetadataService.RESERVED_KEYS.contains("retainRawDays"));
-        assertTrue(TimescaleDBMetadataService.RESERVED_KEYS.contains("retentionDays"));
+        assertEquals(" ", service.getMetadataValue("MySensor"));
     }
 
     // ------------------------------------------------------------------

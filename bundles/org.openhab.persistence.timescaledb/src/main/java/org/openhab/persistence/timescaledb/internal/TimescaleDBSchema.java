@@ -44,22 +44,19 @@ public class TimescaleDBSchema {
                 id         SERIAL PRIMARY KEY,
                 name       TEXT NOT NULL UNIQUE,
                 label      TEXT,
-                metadata   JSONB,
+                metadata   TEXT,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
             """;
 
-    /**
-     * Migration: adds the {@code metadata} JSONB column to {@code item_meta} for existing installations.
-     * For fresh installs the column is already part of the CREATE TABLE above, so the DO block is a no-op.
-     */
+    /** Migration: adds {@code metadata TEXT} to existing installations. No-op when already present. */
     private static final String SQL_MIGRATE_ADD_METADATA_COLUMN = """
             DO $$ BEGIN
                 IF NOT EXISTS (
                     SELECT 1 FROM information_schema.columns
                     WHERE table_name = 'item_meta' AND column_name = 'metadata'
                 ) THEN
-                    ALTER TABLE item_meta ADD COLUMN metadata JSONB;
+                    ALTER TABLE item_meta ADD COLUMN metadata TEXT;
                 END IF;
             END $$
             """;

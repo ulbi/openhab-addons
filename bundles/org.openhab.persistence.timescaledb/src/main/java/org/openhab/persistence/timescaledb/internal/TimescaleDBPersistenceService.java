@@ -251,7 +251,8 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
         String name = alias != null ? alias : item.getName();
         @Nullable
         String label = item.getLabel();
-        Map<String, String> userTags = metadataService.getUserTags(name);
+        @Nullable
+        String metadata = metadataService.getMetadataValue(name);
 
         HikariDataSource ds = dataSource;
         if (ds == null) {
@@ -260,7 +261,7 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
         }
 
         try (Connection conn = ds.getConnection()) {
-            int itemId = getOrCreateItemId(conn, name, label, userTags);
+            int itemId = getOrCreateItemId(conn, name, label, metadata);
             TimescaleDBQuery.insert(conn, itemId, date, row);
         } catch (SQLException e) {
             LOGGER.error("Failed to store item '{}': {}", name, e.getMessage(), e);
@@ -380,13 +381,13 @@ public class TimescaleDBPersistenceService implements ModifiablePersistenceServi
     // Internal helpers
     // -------------------------------------------------------------------------
 
-    private int getOrCreateItemId(Connection conn, String name, @Nullable String label, Map<String, String> userTags)
+    private int getOrCreateItemId(Connection conn, String name, @Nullable String label, @Nullable String metadata)
             throws SQLException {
         Integer cached = itemIdCache.get(name);
         if (cached != null) {
             return cached;
         }
-        int id = TimescaleDBQuery.getOrCreateItemId(conn, name, label, userTags);
+        int id = TimescaleDBQuery.getOrCreateItemId(conn, name, label, metadata);
         itemIdCache.put(name, id);
         return id;
     }
