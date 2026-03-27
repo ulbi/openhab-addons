@@ -44,8 +44,24 @@ public class TimescaleDBSchema {
                 id         SERIAL PRIMARY KEY,
                 name       TEXT NOT NULL UNIQUE,
                 label      TEXT,
+                metadata   JSONB,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
+            """;
+
+    /**
+     * Migration: adds the {@code metadata} JSONB column to {@code item_meta} for existing installations.
+     * For fresh installs the column is already part of the CREATE TABLE above, so the DO block is a no-op.
+     */
+    private static final String SQL_MIGRATE_ADD_METADATA_COLUMN = """
+            DO $$ BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'item_meta' AND column_name = 'metadata'
+                ) THEN
+                    ALTER TABLE item_meta ADD COLUMN metadata JSONB;
+                END IF;
+            END $$
             """;
 
     private static final String SQL_CREATE_ITEMS = """
@@ -143,6 +159,9 @@ public class TimescaleDBSchema {
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(SQL_CREATE_ITEM_META);
             LOGGER.debug("Table item_meta ready");
+
+            stmt.execute(SQL_MIGRATE_ADD_METADATA_COLUMN);
+            LOGGER.debug("Column item_meta.metadata ensured");
 
             stmt.execute(SQL_CREATE_ITEMS);
             LOGGER.debug("Table items ready");

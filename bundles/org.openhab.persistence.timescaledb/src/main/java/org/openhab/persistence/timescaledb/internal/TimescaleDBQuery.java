@@ -21,6 +21,8 @@ import java.sql.Types;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -59,7 +61,11 @@ public class TimescaleDBQuery {
     // --- item_meta lookup / insert ---
     private static final String SQL_SELECT_ITEM_ID = "SELECT id FROM item_meta WHERE name = ?";
 
-    private static final String SQL_INSERT_ITEM_META = "INSERT INTO item_meta (name, label) VALUES (?, ?) ON CONFLICT (name) DO UPDATE SET label = EXCLUDED.label RETURNING id";
+    /**
+     * UPSERT for item_meta: inserts a new row or updates label and metadata for an existing one.
+     * Returns the id via RETURNING so a single round-trip suffices.
+     */
+    private static final String SQL_UPSERT_ITEM_META = "INSERT INTO item_meta (name, label, metadata) VALUES (?, ?, ?::jsonb) ON CONFLICT (name) DO UPDATE SET label = EXCLUDED.label, metadata = EXCLUDED.metadata RETURNING id";
 
     // --- SELECT base ---
     private static final String SQL_SELECT_BASE = "SELECT time, value, string, unit FROM items WHERE item_id = ?";
@@ -100,38 +106,48 @@ public class TimescaleDBQuery {
     }
 
     /**
-     * Returns the item_id for the given name, or inserts a new {@code item_meta} row and returns its id.
+     * Returns the item_id for the given name, inserting or updating the {@code item_meta} row as needed.
+     *
+     * <p>
+     * A single UPSERT round-trip is used so that {@code label} and {@code metadata} are always up-to-date
+     * after a service restart (when the in-memory cache has been cleared).
      *
      * @param connection The JDBC connection.
      * @param name The item name.
      * @param label The item label (may be null; stored for informational purposes).
+     * @param userTags User-defined tag key-value pairs to store as JSONB in {@code item_meta.metadata}.
      * @return The item_id.
      * @throws SQLException on any database error.
      */
-    public static int getOrCreateItemId(Connection connection, String name, @Nullable String label)
-            throws SQLException {
-        // Try SELECT first (fast path for known items)
-        try (PreparedStatement ps = connection.prepareStatement(SQL_SELECT_ITEM_ID)) {
-            ps.setString(1, name);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return rs.getInt(1);
-                }
-            }
-        }
-        // Not found: INSERT with ON CONFLICT DO UPDATE so concurrent calls are safe
-        try (PreparedStatement ps = connection.prepareStatement(SQL_INSERT_ITEM_META)) {
+    public static int getOrCreateItemId(Connection connection, String name, @Nullable String label,
+            Map<String, String> userTags) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement(SQL_UPSERT_ITEM_META)) {
             ps.setString(1, name);
             ps.setString(2, label);
+            ps.setString(3, toJsonString(userTags));
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     int id = rs.getInt(1);
-                    LOGGER.debug("Registered new item '{}' with item_id={}", name, id);
+                    LOGGER.debug("Registered/updated item '{}' with item_id={}", name, id);
                     return id;
                 }
             }
         }
         throw new SQLException("Failed to get or create item_meta entry for item '" + name + "'");
+    }
+
+    /**
+     * Convenience overload without user tags (stores an empty JSONB object for {@code metadata}).
+     *
+     * @param connection The JDBC connection.
+     * @param name The item name.
+     * @param label The item label (may be null).
+     * @return The item_id.
+     * @throws SQLException on any database error.
+     */
+    public static int getOrCreateItemId(Connection connection, String name, @Nullable String label)
+            throws SQLException {
+        return getOrCreateItemId(connection, name, label, Map.of());
     }
 
     /**
@@ -272,5 +288,62 @@ public class TimescaleDBQuery {
             }
         }
         return java.util.Optional.empty();
+    }
+
+    // -------------------------------------------------------------------------
+    // JSON helpers (no external library dependency)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Serialises a flat string-to-string map as a JSON object string suitable for the PostgreSQL {@code JSONB}
+     * type. Keys are sorted so the output is deterministic and easy to test.
+     *
+     * @param tags The map to serialise (may be empty).
+     * @return A JSON object string, e.g. {@code {"room":"Corridor","kind":"zigbee"}}. Returns {@code {}} for an
+     *         empty map.
+     */
+    static String toJsonString(Map<String, String> tags) {
+        if (tags.isEmpty()) {
+            return "{}";
+        }
+        StringBuilder sb = new StringBuilder("{");
+        boolean first = true;
+        // TreeMap ensures deterministic key order
+        for (Map.Entry<String, String> entry : new TreeMap<>(tags).entrySet()) {
+            if (!first) {
+                sb.append(",");
+            }
+            sb.append('"').append(jsonEscape(entry.getKey())).append("\":\"");
+            sb.append(jsonEscape(entry.getValue())).append('"');
+            first = false;
+        }
+        sb.append("}");
+        return sb.toString();
+    }
+
+    /**
+     * Escapes a string value for embedding inside a JSON string literal.
+     * Handles {@code "}, {@code \}, newline, carriage-return, tab, and all other control characters.
+     */
+    private static String jsonEscape(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.toString();
     }
 }

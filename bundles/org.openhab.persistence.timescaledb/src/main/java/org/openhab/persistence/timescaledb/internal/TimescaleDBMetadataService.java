@@ -13,8 +13,12 @@
 package org.openhab.persistence.timescaledb.internal;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -28,17 +32,35 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Reads and parses per-item downsampling configuration from the {@link MetadataRegistry}
+ * Reads and parses per-item configuration from the {@link MetadataRegistry}
  * using the {@code timescaledb} namespace.
  *
  * <p>
+ * The service handles two types of item metadata:
+ * <ol>
+ *   <li><b>Downsampling config</b> — controls the {@link TimescaleDBDownsampleJob} (function, interval, retention).
+ *       See {@link #getDownsampleConfig(String)}.</li>
+ *   <li><b>User-defined tags</b> — arbitrary key-value pairs stored in {@code item_meta.metadata} as a JSONB
+ *       object, enabling SQL queries that filter or aggregate by item attributes (e.g. room, location, device type).
+ *       See {@link #getUserTags(String)}.</li>
+ * </ol>
+ *
+ * <p>
  * Example item metadata:
- * 
+ *
  * <pre>
  * Number:Temperature MySensor {
- *     timescaledb="AVG" [ downsampleInterval="1h", retainRawDays="5", retentionDays="365" ]
+ *     timescaledb="AVG" [
+ *         downsampleInterval="1h", retainRawDays="5", retentionDays="365",
+ *         room="Corridor", kind="zigbee", location="indoors"
+ *     ]
  * }
  * </pre>
+ *
+ * <p>
+ * In this example {@code downsampleInterval}, {@code retainRawDays}, and {@code retentionDays} are reserved
+ * for the downsampling feature. All other keys ({@code room}, {@code kind}, {@code location}) are treated as
+ * user-defined tags and stored in {@code item_meta.metadata}.
  *
  * @author René Ulbricht - Initial contribution
  */
@@ -50,6 +72,12 @@ public class TimescaleDBMetadataService {
 
     /** The metadata namespace used by this persistence service. */
     public static final String METADATA_NAMESPACE = "timescaledb";
+
+    /**
+     * Metadata config keys reserved for the downsampling feature.
+     * These keys are <em>not</em> included in the user-defined tags returned by {@link #getUserTags(String)}.
+     */
+    static final Set<String> RESERVED_KEYS = Set.of("downsampleInterval", "retainRawDays", "retentionDays");
 
     private static final int DEFAULT_RETAIN_RAW_DAYS = 5;
     private static final int DEFAULT_RETENTION_DAYS = 0;
@@ -93,6 +121,40 @@ public class TimescaleDBMetadataService {
             result.add(metadata.getUID().getItemName());
         }
         return result;
+    }
+
+    /**
+     * Returns user-defined tag key-value pairs for the given item.
+     *
+     * <p>
+     * All {@code timescaledb} metadata configuration keys that are <em>not</em> reserved for the downsampling feature
+     * ({@code downsampleInterval}, {@code retainRawDays}, {@code retentionDays}) are treated as user-defined tags.
+     * These tags are stored as a JSONB object in {@code item_meta.metadata} so that SQL queries can filter or
+     * aggregate items by arbitrary attributes (e.g. {@code WHERE metadata->>'room' = 'Corridor'}).
+     *
+     * <p>
+     * Unlike InfluxDB persistence, the metadata {@code value} (which configures the aggregation function) is
+     * intentionally excluded — the value is only meaningful for the downsampling scheduler and must not be
+     * surfaced as a user tag.
+     *
+     * @param itemName The item name.
+     * @return An immutable map of user tag key-value pairs (may be empty if no metadata or no non-reserved keys).
+     */
+    public Map<String, String> getUserTags(String itemName) {
+        MetadataKey key = new MetadataKey(METADATA_NAMESPACE, itemName);
+        @Nullable
+        Metadata metadata = metadataRegistry.get(key);
+        if (metadata == null) {
+            return Map.of();
+        }
+        Map<String, String> tags = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : metadata.getConfiguration().entrySet()) {
+            if (!RESERVED_KEYS.contains(entry.getKey())) {
+                Object val = entry.getValue();
+                tags.put(entry.getKey(), val != null ? val.toString() : "");
+            }
+        }
+        return Collections.unmodifiableMap(tags);
     }
 
     private Optional<DownsampleConfig> parseConfig(String itemName, Metadata metadata) {

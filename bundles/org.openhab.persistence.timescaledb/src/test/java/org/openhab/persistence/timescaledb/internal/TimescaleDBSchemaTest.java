@@ -60,8 +60,11 @@ class TimescaleDBSchemaTest {
         // Must check TimescaleDB extension
         verify(statement).executeQuery(contains("pg_extension"));
 
-        // Must create item_meta
+        // Must create item_meta with metadata column
         verify(statement).execute(contains("CREATE TABLE IF NOT EXISTS item_meta"));
+
+        // Must run metadata column migration
+        verify(statement).execute(contains("item_meta ADD COLUMN metadata JSONB"));
 
         // Must create items table
         verify(statement).execute(contains("CREATE TABLE IF NOT EXISTS items"));
@@ -218,5 +221,77 @@ class TimescaleDBSchemaTest {
                 "Migration must add the new items_time_item_id_downsampled_ukey constraint");
         assertTrue(migrationSql.indexOf("DROP") < migrationSql.indexOf("ADD"),
                 "Migration must DROP the old constraint before ADD-ing the new one");
+    }
+
+    // ------------------------------------------------------------------
+    // item_meta.metadata column — DDL and migration
+    // ------------------------------------------------------------------
+
+    @Test
+    void createTableItemmetaContainsMetadataJsonbColumn() throws SQLException {
+        var capturedSql = new java.util.ArrayList<String>();
+        doAnswer(inv -> {
+            capturedSql.add(inv.getArgument(0));
+            return false;
+        }).when(statement).execute(anyString());
+
+        TimescaleDBSchema.initialize(connection, "7 days", 0, 0);
+
+        java.util.Optional<String> createItemMeta = capturedSql.stream()
+                .filter(s -> s.contains("CREATE TABLE IF NOT EXISTS item_meta")).findFirst();
+        assertTrue(createItemMeta.isPresent(), "CREATE TABLE item_meta statement not found");
+        String ddl = createItemMeta.get();
+        assertTrue(ddl.contains("metadata") && ddl.contains("JSONB"),
+                "CREATE TABLE item_meta must define a 'metadata JSONB' column");
+    }
+
+    @Test
+    void migrationDdlAddsMetadataColumnToExistingInstallations() throws SQLException {
+        var capturedSql = new java.util.ArrayList<String>();
+        doAnswer(inv -> {
+            capturedSql.add(inv.getArgument(0));
+            return false;
+        }).when(statement).execute(anyString());
+
+        TimescaleDBSchema.initialize(connection, "7 days", 0, 0);
+
+        // The migration DO-block must add the metadata column if it doesn't exist
+        java.util.Optional<String> migrationOpt = capturedSql.stream()
+                .filter(s -> s.contains("ADD COLUMN metadata JSONB")).findFirst();
+        assertTrue(migrationOpt.isPresent(),
+                "Migration DO-block for item_meta.metadata column not found in executed DDL statements");
+        String migrationSql = migrationOpt.get();
+
+        // Must be idempotent: only adds the column when it doesn't already exist
+        assertTrue(migrationSql.contains("IF NOT EXISTS") || migrationSql.contains("information_schema.columns"),
+                "Migration must be idempotent and check for column existence before ALTER");
+    }
+
+    @Test
+    void migrationForMetadataColumnRunsAfterCreateTableItemMeta() throws SQLException {
+        var capturedSql = new java.util.ArrayList<String>();
+        doAnswer(inv -> {
+            capturedSql.add(inv.getArgument(0));
+            return false;
+        }).when(statement).execute(anyString());
+
+        TimescaleDBSchema.initialize(connection, "7 days", 0, 0);
+
+        int createTableIdx = -1;
+        int migrationIdx = -1;
+        for (int i = 0; i < capturedSql.size(); i++) {
+            String s = capturedSql.get(i);
+            if (s.contains("CREATE TABLE IF NOT EXISTS item_meta") && createTableIdx < 0) {
+                createTableIdx = i;
+            }
+            if (s.contains("ADD COLUMN metadata JSONB") && migrationIdx < 0) {
+                migrationIdx = i;
+            }
+        }
+
+        assertTrue(createTableIdx >= 0, "CREATE TABLE item_meta must be executed");
+        assertTrue(migrationIdx >= 0, "Migration for metadata column must be executed");
+        assertTrue(createTableIdx < migrationIdx,
+                "Migration must run after CREATE TABLE item_meta so that the ALTER runs on an existing table");
     }
 }

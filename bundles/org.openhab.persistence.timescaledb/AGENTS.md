@@ -49,6 +49,7 @@ CREATE TABLE item_meta (
     id         SERIAL PRIMARY KEY,
     name       TEXT NOT NULL UNIQUE,
     label      TEXT,
+    metadata   JSONB,            -- user-defined tags (non-reserved timescaledb metadata config keys)
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -64,6 +65,37 @@ CREATE TABLE items (
 SELECT create_hypertable('items', 'time');
 CREATE INDEX ON items (item_id, time DESC);
 ```
+
+### `item_meta.metadata` — user-defined tags
+
+The `metadata` column stores arbitrary key-value pairs from the `timescaledb` item metadata as a JSONB object.
+Keys reserved for the downsampling feature (`downsampleInterval`, `retainRawDays`, `retentionDays`) are excluded.
+This allows SQL queries in Grafana or other tools to filter items by attribute:
+
+```sql
+-- All items in the Corridor
+SELECT im.name, i.time, i.value
+FROM items i
+JOIN item_meta im ON im.id = i.item_id
+WHERE im.metadata->>'room' = 'Corridor';
+```
+
+Example item metadata that produces user tags:
+
+```
+Number:Temperature MySensor {
+    timescaledb="AVG" [
+        downsampleInterval="1h", retainRawDays="5", retentionDays="365",
+        room="Corridor", kind="zigbee", location="indoors"
+    ]
+}
+```
+
+The `metadata` column for `MySensor` will contain: `{"kind":"zigbee","location":"indoors","room":"Corridor"}`
+
+**Migration:** On service startup, `TimescaleDBSchema.initialize()` runs an idempotent DDL migration
+(`ALTER TABLE item_meta ADD COLUMN metadata JSONB`) for existing installations that were created before
+this column was added.
 
 ### Why `unit` is per row, not in `item_meta`
 

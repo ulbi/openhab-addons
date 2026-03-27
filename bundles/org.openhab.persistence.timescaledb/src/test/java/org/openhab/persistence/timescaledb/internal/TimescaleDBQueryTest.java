@@ -23,6 +23,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.jdt.annotation.DefaultLocation;
 import org.eclipse.jdt.annotation.NonNullByDefault;
@@ -108,41 +109,74 @@ class TimescaleDBQueryTest {
     }
 
     // ------------------------------------------------------------------
-    // getOrCreateItemId — existing item (SELECT path)
+    // getOrCreateItemId — UPSERT behaviour
     // ------------------------------------------------------------------
 
     @Test
-    void getOrCreateItemIdExistingitemReturnsfromselect() throws Exception {
+    void getOrCreateItemIdUsesUpsertAndReturnsId() throws Exception {
         when(resultSet.next()).thenReturn(true);
         when(resultSet.getInt(1)).thenReturn(42);
 
         int id = TimescaleDBQuery.getOrCreateItemId(connection, "MySensor", "My Sensor Label");
 
         assertEquals(42, id);
-        // Only one PreparedStatement needed (the SELECT)
-        verify(connection, times(1)).prepareStatement(contains("SELECT id FROM item_meta"));
+        // Must use a single UPSERT (INSERT ... ON CONFLICT DO UPDATE ... RETURNING id)
+        verify(connection, times(1)).prepareStatement(contains("INSERT INTO item_meta"));
+        verify(connection, times(1)).prepareStatement(contains("ON CONFLICT"));
+        verify(connection, times(1)).prepareStatement(contains("RETURNING id"));
     }
 
     @Test
-    void getOrCreateItemIdNewitemInsertsandreturns() throws Exception {
-        // First call (SELECT) returns no rows; second (INSERT) returns the new id
-        ResultSet selectRs = mock(ResultSet.class);
-        ResultSet insertRs = mock(ResultSet.class);
-        PreparedStatement selectPs = mock(PreparedStatement.class);
-        PreparedStatement insertPs = mock(PreparedStatement.class);
-
-        when(selectRs.next()).thenReturn(false);
-        when(insertRs.next()).thenReturn(true);
-        when(insertRs.getInt(1)).thenReturn(99);
-        when(selectPs.executeQuery()).thenReturn(selectRs);
-        when(insertPs.executeQuery()).thenReturn(insertRs);
-
-        when(connection.prepareStatement(contains("SELECT id FROM item_meta"))).thenReturn(selectPs);
-        when(connection.prepareStatement(contains("INSERT INTO item_meta"))).thenReturn(insertPs);
+    void getOrCreateItemIdNewitemUpsertCreatesEntry() throws Exception {
+        // Simulate: UPSERT returns new id (item did not exist before)
+        when(resultSet.next()).thenReturn(true);
+        when(resultSet.getInt(1)).thenReturn(99);
 
         int id = TimescaleDBQuery.getOrCreateItemId(connection, "NewSensor", null);
 
         assertEquals(99, id);
+    }
+
+    @Test
+    void getOrCreateItemIdWithUserTagsSetsMetadataParameter() throws Exception {
+        when(resultSet.next()).thenReturn(true);
+        when(resultSet.getInt(1)).thenReturn(7);
+
+        TimescaleDBQuery.getOrCreateItemId(connection, "TaggedSensor", "label",
+                Map.of("room", "Corridor", "kind", "zigbee"));
+
+        // Parameter 3 must be the JSON string of the user tags
+        verify(preparedStatement).setString(eq(3), contains("\"room\""));
+        verify(preparedStatement).setString(eq(3), contains("\"kind\""));
+    }
+
+    @Test
+    void getOrCreateItemIdWithoutUserTagsSetsEmptyJsonObject() throws Exception {
+        when(resultSet.next()).thenReturn(true);
+        when(resultSet.getInt(1)).thenReturn(5);
+
+        TimescaleDBQuery.getOrCreateItemId(connection, "PlainSensor", null);
+
+        // Parameter 3 must be an empty JSON object when no tags are provided
+        verify(preparedStatement).setString(3, "{}");
+    }
+
+    @Test
+    void getOrCreateItemIdUpsertSqlContainsDoUpdateSetMetadata() throws Exception {
+        var capturedSql = new java.util.ArrayList<String>();
+        when(connection.prepareStatement(anyString())).thenAnswer(inv -> {
+            capturedSql.add(inv.getArgument(0));
+            return preparedStatement;
+        });
+        when(resultSet.next()).thenReturn(true);
+        when(resultSet.getInt(1)).thenReturn(1);
+
+        TimescaleDBQuery.getOrCreateItemId(connection, "Sensor", null);
+
+        String sql = capturedSql.get(0);
+        assertTrue(sql.contains("DO UPDATE SET"), "UPSERT must use ON CONFLICT DO UPDATE");
+        assertTrue(sql.contains("metadata"), "UPSERT must update the metadata column");
+        assertTrue(sql.contains("RETURNING id"), "UPSERT must RETURN the id");
     }
 
     // ------------------------------------------------------------------
@@ -369,5 +403,67 @@ class TimescaleDBQueryTest {
         String sql = capturedSql.get(0);
         assertTrue(sql.contains("time >= ?"));
         assertTrue(sql.contains("time <= ?"));
+    }
+
+    // ------------------------------------------------------------------
+    // toJsonString — JSON serialisation helper
+    // ------------------------------------------------------------------
+
+    @Test
+    void toJsonStringEmptyMapReturnsEmptyObject() {
+        assertEquals("{}", TimescaleDBQuery.toJsonString(Map.of()));
+    }
+
+    @Test
+    void toJsonStringSingleEntryProducesValidJson() {
+        String json = TimescaleDBQuery.toJsonString(Map.of("room", "Corridor"));
+        assertEquals("{\"room\":\"Corridor\"}", json);
+    }
+
+    @Test
+    void toJsonStringMultipleEntriesAreSortedAlphabetically() {
+        // Use a map with known entries; output must be sorted by key
+        var tags = new java.util.LinkedHashMap<String, String>();
+        tags.put("zzz", "last");
+        tags.put("aaa", "first");
+        tags.put("mmm", "middle");
+
+        String json = TimescaleDBQuery.toJsonString(tags);
+
+        // Keys must be sorted: aaa, mmm, zzz
+        int aaa = json.indexOf("\"aaa\"");
+        int mmm = json.indexOf("\"mmm\"");
+        int zzz = json.indexOf("\"zzz\"");
+        assertTrue(aaa < mmm && mmm < zzz, "JSON keys must be sorted alphabetically");
+    }
+
+    @Test
+    void toJsonStringEscapesDoubleQuotesInValues() {
+        String json = TimescaleDBQuery.toJsonString(Map.of("key", "say \"hello\""));
+        assertTrue(json.contains("\\\"hello\\\""), "Double quotes in values must be escaped");
+    }
+
+    @Test
+    void toJsonStringEscapesBackslashInValues() {
+        String json = TimescaleDBQuery.toJsonString(Map.of("path", "C:\\Users\\test"));
+        assertTrue(json.contains("C:\\\\Users\\\\test"), "Backslashes in values must be escaped");
+    }
+
+    @Test
+    void toJsonStringEscapesNewlineInValues() {
+        String json = TimescaleDBQuery.toJsonString(Map.of("desc", "line1\nline2"));
+        assertTrue(json.contains("\\n"), "Newlines in values must be escaped as \\n");
+    }
+
+    @Test
+    void toJsonStringProducesValidJsonForTypicalMetadata() {
+        var tags = Map.of("kind", "zigbee", "location", "indoors", "room", "Corridor");
+        String json = TimescaleDBQuery.toJsonString(tags);
+
+        // Must be a valid JSON object containing all three entries
+        assertTrue(json.startsWith("{") && json.endsWith("}"), "Must be a JSON object");
+        assertTrue(json.contains("\"kind\":\"zigbee\""), "Must contain kind tag");
+        assertTrue(json.contains("\"location\":\"indoors\""), "Must contain location tag");
+        assertTrue(json.contains("\"room\":\"Corridor\""), "Must contain room tag");
     }
 }

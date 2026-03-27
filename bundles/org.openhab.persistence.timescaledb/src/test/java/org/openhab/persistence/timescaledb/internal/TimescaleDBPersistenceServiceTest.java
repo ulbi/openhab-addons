@@ -140,7 +140,7 @@ class TimescaleDBPersistenceServiceTest {
 
     @Test
     void storeNormalstateSendsinsert() throws Exception {
-        // item_id cache is empty → getOrCreateItemId will run SELECT then INSERT
+        // item_id cache is empty → getOrCreateItemId will run UPSERT
         stubItemIdLookup(7);
 
         var item = new NumberItem("Sensor1");
@@ -164,16 +164,49 @@ class TimescaleDBPersistenceServiceTest {
         var item = new NumberItem("RealName");
 
         // Capture which PreparedStatements get setString(1, "AliasName")
-        PreparedStatement selectPs = mock(PreparedStatement.class);
-        ResultSet selectRs = mock(ResultSet.class);
-        when(selectRs.next()).thenReturn(false);
-        when(selectPs.executeQuery()).thenReturn(selectRs);
-        when(connection.prepareStatement(contains("SELECT id FROM item_meta"))).thenReturn(selectPs);
+        PreparedStatement upsertPs = mock(PreparedStatement.class);
+        ResultSet upsertRs = mock(ResultSet.class);
+        when(upsertRs.next()).thenReturn(true);
+        when(upsertRs.getInt(1)).thenReturn(3);
+        when(upsertPs.executeQuery()).thenReturn(upsertRs);
+        when(connection.prepareStatement(contains("INSERT INTO item_meta"))).thenReturn(upsertPs);
 
         service.store(item, ZonedDateTime.now(), new DecimalType(1.0), "AliasName");
 
-        // The item_id lookup SELECT must be called with the alias
-        verify(selectPs, atLeastOnce()).setString(eq(1), eq("AliasName"));
+        // The item_id UPSERT must be called with the alias as parameter 1
+        verify(upsertPs, atLeastOnce()).setString(eq(1), eq("AliasName"));
+    }
+
+    @Test
+    void storeUserTagsArePassedToItemMetaUpsert() throws Exception {
+        // Arrange: metadata registry returns user tags for the item
+        var upsertPs = mock(PreparedStatement.class);
+        var upsertRs = mock(ResultSet.class);
+        var insertItemPs = mock(PreparedStatement.class);
+        when(upsertRs.next()).thenReturn(true);
+        when(upsertRs.getInt(1)).thenReturn(10);
+        when(upsertPs.executeQuery()).thenReturn(upsertRs);
+        when(insertItemPs.executeUpdate()).thenReturn(1);
+        when(connection.prepareStatement(contains("INSERT INTO item_meta"))).thenReturn(upsertPs);
+        when(connection.prepareStatement(contains("INSERT INTO items"))).thenReturn(insertItemPs);
+
+        // Wire up metadata registry to return a timescaledb metadata entry with user tags
+        var metaKey = new org.openhab.core.items.MetadataKey("timescaledb", "TaggedSensor");
+        var meta = new org.openhab.core.items.Metadata(metaKey, "AVG",
+                Map.of("downsampleInterval", "1h", "room", "Corridor", "kind", "zigbee"));
+        when(metadataRegistry.get(metaKey)).thenReturn(meta);
+
+        var item = new NumberItem("TaggedSensor");
+        service.store(item, ZonedDateTime.now(), new DecimalType(1.0), null);
+
+        // Parameter 3 of the UPSERT must contain the user tags as JSON (room and kind, but NOT downsampleInterval)
+        var captor = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(upsertPs).setString(eq(3), captor.capture());
+        String json = captor.getValue();
+        assertTrue(json.contains("\"room\""), "User tag 'room' must be in metadata JSON");
+        assertTrue(json.contains("\"Corridor\""), "User tag value 'Corridor' must be in metadata JSON");
+        assertTrue(json.contains("\"kind\""), "User tag 'kind' must be in metadata JSON");
+        assertFalse(json.contains("downsampleInterval"), "Reserved key must not appear in metadata JSON");
     }
 
     // ------------------------------------------------------------------
@@ -445,24 +478,19 @@ class TimescaleDBPersistenceServiceTest {
     // ------------------------------------------------------------------
 
     /**
-     * Stubs the item_id lookup: SELECT returns nothing, INSERT returns the given id.
+     * Stubs the item_id UPSERT: INSERT ... ON CONFLICT DO UPDATE ... RETURNING id returns the given id.
      */
     private void stubItemIdLookup(int itemId) throws Exception {
-        ResultSet selectRs = mock(ResultSet.class);
-        ResultSet insertRs = mock(ResultSet.class);
-        PreparedStatement selectPs = mock(PreparedStatement.class);
-        PreparedStatement insertPs = mock(PreparedStatement.class);
+        ResultSet upsertRs = mock(ResultSet.class);
+        PreparedStatement upsertPs = mock(PreparedStatement.class);
         PreparedStatement insertItemPs = mock(PreparedStatement.class);
 
-        when(selectRs.next()).thenReturn(false);
-        when(insertRs.next()).thenReturn(true);
-        when(insertRs.getInt(1)).thenReturn(itemId);
-        when(selectPs.executeQuery()).thenReturn(selectRs);
-        when(insertPs.executeQuery()).thenReturn(insertRs);
+        when(upsertRs.next()).thenReturn(true);
+        when(upsertRs.getInt(1)).thenReturn(itemId);
+        when(upsertPs.executeQuery()).thenReturn(upsertRs);
         when(insertItemPs.executeUpdate()).thenReturn(1);
 
-        when(connection.prepareStatement(contains("SELECT id FROM item_meta"))).thenReturn(selectPs);
-        when(connection.prepareStatement(contains("INSERT INTO item_meta"))).thenReturn(insertPs);
+        when(connection.prepareStatement(contains("INSERT INTO item_meta"))).thenReturn(upsertPs);
         when(connection.prepareStatement(contains("INSERT INTO items"))).thenReturn(insertItemPs);
     }
 }
