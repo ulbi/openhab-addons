@@ -213,17 +213,26 @@ class TimescaleDBMetadataServiceTest {
     }
 
     @Test
-    void getMetadataValueReturnsValueString() {
+    void getMetadataValueNoFiltervalueKeyReturnsNull() {
         stubMetadata("MySensor", "AVG", Map.of("downsampleInterval", "1h"));
 
-        assertEquals("AVG", service.getMetadataValue("MySensor"));
+        assertNull(service.getMetadataValue("MySensor"));
     }
 
     @Test
-    void getMetadataValueBlankValueIsReturnedAsIs() {
-        stubMetadata("MySensor", " ", Map.of("retentionDays", "30"));
+    void getMetadataValueReturnsFiltervalueConfigEntry() {
+        stubMetadata("MySensor", "AVG", Map.of("filtervalue", "sensor.temperature", "downsampleInterval", "1h"));
 
-        assertEquals(" ", service.getMetadataValue("MySensor"));
+        assertEquals("sensor.temperature", service.getMetadataValue("MySensor"));
+    }
+
+    @Test
+    void getMetadataValueDoesNotReturnAggregationFunctionValue() {
+        // getValue() returns "AVG" — that must NOT end up in item_meta.metadata
+        stubMetadata("MySensor", "AVG", Map.of("downsampleInterval", "1h"));
+
+        assertNull(service.getMetadataValue("MySensor"),
+                "Aggregation function from getValue() must not be stored as metadata");
     }
 
     // ------------------------------------------------------------------

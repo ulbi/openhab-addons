@@ -178,8 +178,7 @@ class TimescaleDBPersistenceServiceTest {
     }
 
     @Test
-    void storeUserTagsArePassedToItemMetaUpsert() throws Exception {
-        // Arrange: metadata registry returns user tags for the item
+    void storeFiltervalueIsPassedToItemMetaUpsert() throws Exception {
         var upsertPs = mock(PreparedStatement.class);
         var upsertRs = mock(ResultSet.class);
         var insertItemPs = mock(PreparedStatement.class);
@@ -190,23 +189,15 @@ class TimescaleDBPersistenceServiceTest {
         when(connection.prepareStatement(contains("INSERT INTO item_meta"))).thenReturn(upsertPs);
         when(connection.prepareStatement(contains("INSERT INTO items"))).thenReturn(insertItemPs);
 
-        // Wire up metadata registry to return a timescaledb metadata entry with user tags
-        var metaKey = new org.openhab.core.items.MetadataKey("timescaledb", "TaggedSensor");
+        var metaKey = new org.openhab.core.items.MetadataKey("timescaledb", "Sensor1");
         var meta = new org.openhab.core.items.Metadata(metaKey, "AVG",
-                Map.of("downsampleInterval", "1h", "room", "Corridor", "kind", "zigbee"));
+                Map.of("filtervalue", "my.sensor", "downsampleInterval", "1h"));
         when(metadataRegistry.get(metaKey)).thenReturn(meta);
 
-        var item = new NumberItem("TaggedSensor");
-        service.store(item, ZonedDateTime.now(), new DecimalType(1.0), null);
+        service.store(new NumberItem("Sensor1"), ZonedDateTime.now(), new DecimalType(1.0), null);
 
-        // Parameter 3 of the UPSERT must contain the user tags as JSON (room and kind, but NOT downsampleInterval)
-        var captor = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(upsertPs).setString(eq(3), captor.capture());
-        String json = captor.getValue();
-        assertTrue(json.contains("\"room\""), "User tag 'room' must be in metadata JSON");
-        assertTrue(json.contains("\"Corridor\""), "User tag value 'Corridor' must be in metadata JSON");
-        assertTrue(json.contains("\"kind\""), "User tag 'kind' must be in metadata JSON");
-        assertFalse(json.contains("downsampleInterval"), "Reserved key must not appear in metadata JSON");
+        // Parameter 3 of the UPSERT must be the filtervalue string
+        verify(upsertPs).setString(3, "my.sensor");
     }
 
     // ------------------------------------------------------------------

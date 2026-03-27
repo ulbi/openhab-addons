@@ -64,7 +64,7 @@ class TimescaleDBSchemaTest {
         verify(statement).execute(contains("CREATE TABLE IF NOT EXISTS item_meta"));
 
         // Must run metadata column migration
-        verify(statement).execute(contains("item_meta ADD COLUMN metadata JSONB"));
+        verify(statement).execute(contains("item_meta ADD COLUMN metadata TEXT"));
 
         // Must create items table
         verify(statement).execute(contains("CREATE TABLE IF NOT EXISTS items"));
@@ -228,7 +228,7 @@ class TimescaleDBSchemaTest {
     // ------------------------------------------------------------------
 
     @Test
-    void createTableItemmetaContainsMetadataJsonbColumn() throws SQLException {
+    void createTableItemmetaContainsMetadataTextColumn() throws SQLException {
         var capturedSql = new java.util.ArrayList<String>();
         doAnswer(inv -> {
             capturedSql.add(inv.getArgument(0));
@@ -241,8 +241,8 @@ class TimescaleDBSchemaTest {
                 .filter(s -> s.contains("CREATE TABLE IF NOT EXISTS item_meta")).findFirst();
         assertTrue(createItemMeta.isPresent(), "CREATE TABLE item_meta statement not found");
         String ddl = createItemMeta.get();
-        assertTrue(ddl.contains("metadata") && ddl.contains("JSONB"),
-                "CREATE TABLE item_meta must define a 'metadata JSONB' column");
+        assertTrue(ddl.contains("metadata") && ddl.contains("TEXT"),
+                "CREATE TABLE item_meta must define a 'metadata TEXT' column");
     }
 
     @Test
@@ -255,14 +255,12 @@ class TimescaleDBSchemaTest {
 
         TimescaleDBSchema.initialize(connection, "7 days", 0, 0);
 
-        // The migration DO-block must add the metadata column if it doesn't exist
         java.util.Optional<String> migrationOpt = capturedSql.stream()
-                .filter(s -> s.contains("ADD COLUMN metadata JSONB")).findFirst();
+                .filter(s -> s.contains("ADD COLUMN metadata TEXT")).findFirst();
         assertTrue(migrationOpt.isPresent(),
                 "Migration DO-block for item_meta.metadata column not found in executed DDL statements");
         String migrationSql = migrationOpt.get();
 
-        // Must be idempotent: only adds the column when it doesn't already exist
         assertTrue(migrationSql.contains("IF NOT EXISTS") || migrationSql.contains("information_schema.columns"),
                 "Migration must be idempotent and check for column existence before ALTER");
     }
@@ -284,7 +282,7 @@ class TimescaleDBSchemaTest {
             if (s.contains("CREATE TABLE IF NOT EXISTS item_meta") && createTableIdx < 0) {
                 createTableIdx = i;
             }
-            if (s.contains("ADD COLUMN metadata JSONB") && migrationIdx < 0) {
+            if (s.contains("ADD COLUMN metadata TEXT") && migrationIdx < 0) {
                 migrationIdx = i;
             }
         }

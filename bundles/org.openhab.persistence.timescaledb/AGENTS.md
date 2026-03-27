@@ -66,36 +66,21 @@ SELECT create_hypertable('items', 'time');
 CREATE INDEX ON items (item_id, time DESC);
 ```
 
-### `item_meta.metadata` — user-defined tags
+### `item_meta.metadata` — filtervalue
 
-The `metadata` column stores arbitrary key-value pairs from the `timescaledb` item metadata as a JSONB object.
-Keys reserved for the downsampling feature (`downsampleInterval`, `retainRawDays`, `retentionDays`) are excluded.
-This allows SQL queries in Grafana or other tools to filter items by attribute:
-
-```sql
--- All items in the Corridor
-SELECT im.name, i.time, i.value
-FROM items i
-JOIN item_meta im ON im.id = i.item_id
-WHERE im.metadata->>'room' = 'Corridor';
-```
-
-Example item metadata that produces user tags:
+The `metadata TEXT` column stores the value of the `filtervalue` config key from the `timescaledb` item metadata:
 
 ```
 Number:Temperature MySensor {
-    timescaledb="AVG" [
-        downsampleInterval="1h", retainRawDays="5", retentionDays="365",
-        room="Corridor", kind="zigbee", location="indoors"
-    ]
+    timescaledb="AVG" [ filtervalue="sensor.temperature", downsampleInterval="1h" ]
 }
+-- item_meta.metadata = 'sensor.temperature'
 ```
 
-The `metadata` column for `MySensor` will contain: `{"kind":"zigbee","location":"indoors","room":"Corridor"}`
+The `value` position (here `"AVG"`) is already used by the downsampling feature.
+When no `filtervalue` key is set, `metadata` is `NULL`.
 
-**Migration:** On service startup, `TimescaleDBSchema.initialize()` runs an idempotent DDL migration
-(`ALTER TABLE item_meta ADD COLUMN metadata JSONB`) for existing installations that were created before
-this column was added.
+**Migration:** On startup `TimescaleDBSchema.initialize()` runs an idempotent `ALTER TABLE item_meta ADD COLUMN metadata TEXT` for existing installations.
 
 ### Why `unit` is per row, not in `item_meta`
 

@@ -773,44 +773,31 @@ class TimescaleDBContainerTest {
     // ------------------------------------------------------------------
 
     // ------------------------------------------------------------------
-    // item_meta.metadata — user-defined tags (integration)
+    // item_meta.metadata — filtervalue (integration)
     // ------------------------------------------------------------------
 
     @Test
     @Order(80)
-    void userTagsAreStoredInItemMetaAsJsonb() throws SQLException {
-        var tags = Map.of("room", "Corridor", "kind", "zigbee", "location", "indoors");
-
+    void filtervalueIsStoredInItemMetadata() throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
-            TimescaleDBQuery.getOrCreateItemId(conn, "TaggedSensor", "Tagged Sensor", tags);
+            TimescaleDBQuery.getOrCreateItemId(conn, "FilterSensor", "label", "sensor.temperature");
         }
 
-        // Read back the raw JSONB value from item_meta
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement ps = conn
-                        .prepareStatement("SELECT metadata FROM item_meta WHERE name = 'TaggedSensor'");
+                        .prepareStatement("SELECT metadata FROM item_meta WHERE name = 'FilterSensor'");
                 ResultSet rs = ps.executeQuery()) {
-            assertTrue(rs.next(), "item_meta row must exist for TaggedSensor");
-            String json = rs.getString(1);
-            assertNotNull(json, "metadata column must not be null after insert with tags");
-            assertTrue(json.contains("\"room\"") && json.contains("\"Corridor\""),
-                    "metadata must contain room tag");
-            assertTrue(json.contains("\"kind\"") && json.contains("\"zigbee\""),
-                    "metadata must contain kind tag");
-            assertTrue(json.contains("\"location\"") && json.contains("\"indoors\""),
-                    "metadata must contain location tag");
+            assertTrue(rs.next());
+            assertEquals("sensor.temperature", rs.getString(1));
         }
     }
 
     @Test
     @Order(81)
-    void userTagsAreUpdatedOnUpsert() throws SQLException {
+    void filtervalueIsUpdatedOnUpsert() throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
-            TimescaleDBQuery.getOrCreateItemId(conn, "UpdatableSensor", "label", Map.of("room", "OldRoom"));
-        }
-        // Second call with different tags — UPSERT must update metadata
-        try (Connection conn = dataSource.getConnection()) {
-            TimescaleDBQuery.getOrCreateItemId(conn, "UpdatableSensor", "label", Map.of("room", "NewRoom"));
+            TimescaleDBQuery.getOrCreateItemId(conn, "UpdatableSensor", "label", "old.value");
+            TimescaleDBQuery.getOrCreateItemId(conn, "UpdatableSensor", "label", "new.value");
         }
 
         try (Connection conn = dataSource.getConnection();
@@ -818,58 +805,46 @@ class TimescaleDBContainerTest {
                         .prepareStatement("SELECT metadata FROM item_meta WHERE name = 'UpdatableSensor'");
                 ResultSet rs = ps.executeQuery()) {
             assertTrue(rs.next());
-            String json = rs.getString(1);
-            assertTrue(json.contains("NewRoom"), "metadata must be updated to NewRoom");
-            assertFalse(json.contains("OldRoom"), "OldRoom must have been replaced");
+            assertEquals("new.value", rs.getString(1));
         }
     }
 
     @Test
     @Order(82)
-    void emptyTagsStoreEmptyJsonObject() throws SQLException {
+    void nullFiltervalueStoresNull() throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
-            TimescaleDBQuery.getOrCreateItemId(conn, "NoTagSensor", null, Map.of());
+            TimescaleDBQuery.getOrCreateItemId(conn, "NoMetaSensor", null);
         }
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement ps = conn
-                        .prepareStatement("SELECT metadata FROM item_meta WHERE name = 'NoTagSensor'");
+                        .prepareStatement("SELECT metadata FROM item_meta WHERE name = 'NoMetaSensor'");
                 ResultSet rs = ps.executeQuery()) {
             assertTrue(rs.next());
-            String json = rs.getString(1);
-            assertNotNull(json, "metadata must not be null even when no tags provided");
-            assertEquals("{}", json.trim(), "Empty tag map must produce an empty JSON object");
+            assertNull(rs.getString(1));
         }
     }
 
     @Test
     @Order(83)
-    void metadataColumnIsQueryableViaJsonbOperator() throws SQLException {
-        // Insert two sensors: one in Corridor, one in Kitchen
+    void metadataColumnIsQueryableByTextValue() throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
-            TimescaleDBQuery.getOrCreateItemId(conn, "CorridorSensor", null, Map.of("room", "Corridor"));
-            TimescaleDBQuery.getOrCreateItemId(conn, "KitchenSensor", null, Map.of("room", "Kitchen"));
+            TimescaleDBQuery.getOrCreateItemId(conn, "TempSensor", null, "sensor.temperature");
+            TimescaleDBQuery.getOrCreateItemId(conn, "HumSensor", null, "sensor.humidity");
         }
 
-        // Query using the PostgreSQL JSONB ->> operator
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement ps = conn.prepareStatement(
-                        "SELECT name FROM item_meta WHERE metadata->>'room' = 'Corridor'");
+                PreparedStatement ps = conn
+                        .prepareStatement("SELECT name FROM item_meta WHERE metadata = 'sensor.temperature'");
                 ResultSet rs = ps.executeQuery()) {
-            boolean found = false;
-            while (rs.next()) {
-                if ("CorridorSensor".equals(rs.getString(1))) {
-                    found = true;
-                }
-            }
-            assertTrue(found, "JSONB operator ->> must allow filtering by metadata tag value");
+            assertTrue(rs.next());
+            assertEquals("TempSensor", rs.getString(1));
         }
     }
 
     @Test
     @Order(84)
     void metadataMigrationAddsColumnToExistingTable() throws SQLException {
-        // Simulate an existing installation: drop and recreate item_meta WITHOUT the metadata column
         try (Connection conn = dataSource.getConnection(); var stmt = conn.createStatement()) {
             stmt.execute("DROP TABLE IF EXISTS items CASCADE");
             stmt.execute("DROP TABLE IF EXISTS item_meta CASCADE");
@@ -877,12 +852,10 @@ class TimescaleDBContainerTest {
                     + "label TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
         }
 
-        // Running schema initialize must add the metadata column via migration
         try (Connection conn = dataSource.getConnection()) {
             TimescaleDBSchema.initialize(conn, "7 days", 0, 0);
         }
 
-        // Verify the column now exists
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement ps = conn.prepareStatement(
                         "SELECT column_name FROM information_schema.columns "

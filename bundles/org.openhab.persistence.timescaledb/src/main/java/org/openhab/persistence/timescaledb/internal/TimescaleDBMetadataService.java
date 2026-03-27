@@ -94,18 +94,28 @@ public class TimescaleDBMetadataService {
         return result;
     }
 
+    /** Config key for the user-defined filter value stored in {@code item_meta.metadata}. */
+    public static final String METADATA_KEY_FILTERVALUE = "filtervalue";
+
     /**
-     * Returns the raw metadata value string for the given item, or {@code null} if no metadata is configured.
-     * This value is stored verbatim in {@code item_meta.metadata}.
+     * Returns the {@code filtervalue} config entry for the given item, or {@code null} if absent.
+     * This string is stored verbatim in {@code item_meta.metadata}.
+     *
+     * <p>
+     * Example: {@code timescaledb="AVG" [ filtervalue="sensor.temperature", downsampleInterval="1h" ]}
      *
      * @param itemName The item name.
-     * @return The metadata value, or {@code null}.
+     * @return The filtervalue string, or {@code null}.
      */
     public @Nullable String getMetadataValue(String itemName) {
         MetadataKey key = new MetadataKey(METADATA_NAMESPACE, itemName);
         @Nullable
         Metadata metadata = metadataRegistry.get(key);
-        return metadata != null ? metadata.getValue() : null;
+        if (metadata == null) {
+            return null;
+        }
+        Object val = metadata.getConfiguration().get(METADATA_KEY_FILTERVALUE);
+        return val != null ? val.toString() : null;
     }
 
     private Optional<DownsampleConfig> parseConfig(String itemName, Metadata metadata) {
